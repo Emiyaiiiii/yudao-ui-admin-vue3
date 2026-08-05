@@ -5,6 +5,11 @@ export interface PermissionAssignUserRoleReqVO {
   roleIds: number[]
 }
 
+export interface PermissionBatchAssignUserRoleReqVO {
+  userIds: number[]
+  roleIds: number[]
+}
+
 export interface PermissionAssignRoleMenuReqVO {
   roleId: number
   menuIds: number[]
@@ -39,4 +44,9 @@ export const getUserRoleList = async (userId: number) => {
 // 赋予用户角色
 export const assignUserRole = async (data: PermissionAssignUserRoleReqVO) => {
   return await request.post({ url: '/system/permission/assign-user-role', data })
+}
+
+// 批量赋予用户角色
+export const batchAssignUserRole = async (data: PermissionBatchAssignUserRoleReqVO) => {
+  return await request.post({ url: '/system/permission/batch-assign-user-role', data })
 }

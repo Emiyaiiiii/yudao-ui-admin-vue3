@@ -100,6 +100,15 @@
             >
               <Icon icon="ep:delete" />批量删除
             </el-button>
+            <el-button
+              type="primary"
+              plain
+              :disabled="checkedIds.length === 0"
+              @click="openBatchAssignRoleForm"
+              v-hasPermi="['system:permission:assign-user-role']"
+            >
+              <Icon icon="ep:circle-check" />批量分配角色
+            </el-button>
           </el-form-item>
         </el-form>
       </ContentWrap>
@@ -208,6 +217,8 @@
   <UserImportForm ref="importFormRef" @success="getList" />
   <!-- 分配角色 -->
   <UserAssignRoleForm ref="assignRoleFormRef" @success="getList" />
+  <!-- 批量分配角色 -->
+  <UserBatchAssignRoleForm ref="batchAssignRoleFormRef" @success="getList" />
 </template>
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
@@ -219,6 +230,7 @@ import * as UserApi from '@/api/system/user'
 import UserForm from './UserForm.vue'
 import UserImportForm from './UserImportForm.vue'
 import UserAssignRoleForm from './UserAssignRoleForm.vue'
+import UserBatchAssignRoleForm from './UserBatchAssignRoleForm.vue'
 import DeptTreeSelect from '@/views/system/dept/components/DeptTreeSelect.vue'
 
 defineOptions({ name: 'SystemUser' })
@@ -383,6 +395,12 @@ const handleResetPwd = async (row: UserApi.UserVO) => {
 const assignRoleFormRef = ref()
 const handleRole = (row: UserApi.UserVO) => {
   assignRoleFormRef.value.open(row)
+}
+
+/** 批量分配角色 */
+const batchAssignRoleFormRef = ref()
+const openBatchAssignRoleForm = () => {
+  batchAssignRoleFormRef.value.open(checkedIds.value)
 }
 
 /** 初始化 */
