@@ -141,7 +141,7 @@ const resetForm = () => {
 /** 获得知识库分类树 */
 const getCategoryTree = async () => {
   categoryTree.value = []
-  const data = await CategoryApi.getCategoryList()
+  const data = await CategoryApi.getCategoryList(undefined)
   const root: Tree = { id: 0, name: '顶级知识库分类', children: [] }
   root.children = handleTree(data, 'id', 'parentId')
   categoryTree.value.push(root)

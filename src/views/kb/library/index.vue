@@ -21,6 +21,7 @@
         <el-tree-select
           v-model="queryParams.categoryId"
           :data="categoryTree"
+          node-key="id"
           :props="{ label: 'name', children: 'children' }"
           check-strictly
           clearable
@@ -55,12 +56,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="状态" prop="status">
-        <el-select
-          v-model="queryParams.status"
-          placeholder="请选择状态"
-          clearable
-          class="!w-240px"
-        >
+        <el-select v-model="queryParams.status" placeholder="请选择状态" clearable class="!w-240px">
           <el-option label="启用" :value="0" />
           <el-option label="禁用" :value="1" />
         </el-select>
@@ -97,11 +93,11 @@
           <Icon icon="ep:download" class="mr-5px" /> 导出
         </el-button>
         <el-button
-            type="danger"
-            plain
-            :disabled="isEmpty(checkedIds)"
-            @click="handleDeleteBatch"
-            v-hasPermi="['kb:library:delete']"
+          type="danger"
+          plain
+          :disabled="isEmpty(checkedIds)"
+          @click="handleDeleteBatch"
+          v-hasPermi="['kb:library:delete']"
         >
           <Icon icon="ep:delete" class="mr-5px" /> 批量删除
         </el-button>
@@ -112,22 +108,45 @@
   <!-- 列表 -->
   <ContentWrap>
     <el-table
-        row-key="id"
-        v-loading="loading"
-        :data="list"
-        :stripe="true"
-        :show-overflow-tooltip="true"
-        @selection-change="handleRowCheckboxChange"
+      row-key="id"
+      v-loading="loading"
+      :data="list"
+      :stripe="true"
+      :show-overflow-tooltip="true"
+      @selection-change="handleRowCheckboxChange"
     >
-    <el-table-column type="selection" width="55" />
+      <el-table-column type="selection" width="55" />
       <el-table-column label="知识库名称" align="center" prop="name" min-width="150px" />
-      <el-table-column label="所属分类" align="center" prop="categoryId" :formatter="categoryFormatter" min-width="120px" />
-      <el-table-column label="层级配置" align="center" prop="kbLevelId" :formatter="levelConfigFormatter" min-width="100px" />
-      <el-table-column label="所有者" align="center" prop="ownerId" :formatter="ownerFormatter" min-width="100px" />
+      <el-table-column
+        label="所属分类"
+        align="center"
+        prop="categoryId"
+        :formatter="categoryFormatter"
+        min-width="120px"
+      />
+      <el-table-column
+        label="层级配置"
+        align="center"
+        prop="kbLevelId"
+        :formatter="levelConfigFormatter"
+        min-width="100px"
+      />
+      <el-table-column
+        label="所有者"
+        align="center"
+        prop="ownerId"
+        :formatter="ownerFormatter"
+        min-width="100px"
+      />
       <el-table-column label="描述" align="center" prop="description" min-width="120px" />
       <el-table-column label="封面" align="center" min-width="100px">
         <template #default="scope">
-          <el-image v-if="scope.row.coverUrl" :src="scope.row.coverUrl" style="width: 40px; height: 40px" fit="cover" />
+          <el-image
+            v-if="scope.row.coverUrl"
+            :src="scope.row.coverUrl"
+            style="width: 40px; height: 40px"
+            fit="cover"
+          />
           <span v-else>—</span>
         </template>
       </el-table-column>
@@ -303,16 +322,16 @@ const handleDeleteBatch = async () => {
   try {
     // 删除的二次确认
     await message.delConfirm()
-    await LibraryApi.deleteLibraryList(checkedIds.value);
-    checkedIds.value = [];
+    await LibraryApi.deleteLibraryList(checkedIds.value)
+    checkedIds.value = []
     message.success(t('common.delSuccess'))
-    await getList();
+    await getList()
   } catch {}
 }
 
 const checkedIds = ref<number[]>([])
 const handleRowCheckboxChange = (records: Library[]) => {
-  checkedIds.value = records.map((item) => item.id!);
+  checkedIds.value = records.map((item) => item.id!)
 }
 
 /** 导出按钮操作 */
@@ -359,12 +378,16 @@ const loadSearchOptions = async () => {
   levelConfigOptions.value = levelData
   // 构建层级配置ID→完整配置映射
   const lvMap: Record<number, any> = {}
-  levelData.forEach((item: any) => { lvMap[item.id] = item })
+  levelData.forEach((item: any) => {
+    lvMap[item.id] = item
+  })
   levelConfigMap.value = lvMap
 
   // 构建用户ID→昵称映射
   const uMap: Record<number, string> = {}
-  userData.forEach((u: any) => { uMap[u.id] = u.nickname })
+  userData.forEach((u: any) => {
+    uMap[u.id] = u.nickname
+  })
   userMap.value = uMap
 
   // 构建部门ID→名称映射
@@ -378,4 +401,4 @@ const loadSearchOptions = async () => {
   flattenDept(deptData)
   deptMap.value = dMap
 }
-</script>
+</script>
