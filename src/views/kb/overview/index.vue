@@ -125,14 +125,58 @@
               <div v-for="doc in documents" :key="doc.id" class="document-item">
                 <Icon icon="ep:document" class="doc-icon" />
                 <div class="doc-info">
-                  <span class="doc-name">{{ doc.fileName }}</span>
+                  <div class="doc-name-row">
+                    <span class="doc-name">{{ doc.fileName }}</span>
+                    <el-tag
+                      v-if="doc.vectorTaskId"
+                      :type="getVectorStatusType(doc)"
+                      size="small"
+                      class="doc-vector-tag"
+                    >
+                      {{ getVectorStatusLabel(doc) }}
+                    </el-tag>
+                    <span class="doc-actions">
+                      <el-button
+                        v-if="isRetryable(doc)"
+                        link
+                        type="success"
+                        size="small"
+                        @click.stop="handleRetryVectorTask(doc)"
+                        :disabled="!canUpload"
+                      >
+                        重试
+                      </el-button>
+                      <el-button
+                        v-if="doc.vectorTaskId && !isTerminalStatus(getVectorStatus(doc))"
+                        link
+                        type="warning"
+                        size="small"
+                        @click.stop="handleCancelVectorTask(doc)"
+                        :disabled="!canUpload"
+                      >
+                        取消
+                      </el-button>
+                      <a v-if="doc.fileUrl" :href="doc.fileUrl" target="_blank" class="doc-download">
+                        <Icon icon="ep:download" />
+                      </a>
+                    </span>
+                  </div>
                   <span class="doc-meta"
                     >{{ formatFileSize(doc.fileSize) }} · 下载 {{ doc.downloadCount }}</span
                   >
+                  <!-- 处理中显示进度条 -->
+                  <div v-if="showProgress(doc)" class="doc-vector-progress">
+                    <el-progress
+                      :percentage="getProgress(doc.vectorTaskId) || 0"
+                      :stroke-width="4"
+                      :show-text="true"
+                      class="vector-progress-bar"
+                    />
+                    <span class="vector-step-text" v-if="getStep(doc.vectorTaskId)">
+                      {{ getStep(doc.vectorTaskId) }}
+                    </span>
+                  </div>
                 </div>
-                <a v-if="doc.fileUrl" :href="doc.fileUrl" target="_blank" class="doc-download">
-                  <Icon icon="ep:download" />
-                </a>
               </div>
             </div>
             <el-empty
@@ -235,13 +279,85 @@ import { DocumentApi, type Document } from '@/api/kb/document'
 import { ProjectMemberApi } from '@/api/kb/projectmember'
 import { LevelConfigApi } from '@/api/kb/levelconfig'
 import { UserDeptApi } from '@/api/kb/userdept'
+import {
+  VectorTaskApi,
+  VectorTaskStatus,
+  vectorStatusConfig,
+  isTerminalStatus
+} from '@/api/kb/vectorTask'
 import { handleTree } from '@/utils/tree'
 import { useUserStore } from '@/store/modules/user'
 import LibraryForm from '../library/LibraryForm.vue'
+import { useVectorTaskWs } from '../document/useVectorTaskWs'
 
 defineOptions({ name: 'KbOverview' })
 
 const userStore = useUserStore()
+
+// ========== 向量任务 WebSocket 监听 ==========
+const { resolveVectorStatus, getProgress, getStep } = useVectorTaskWs()
+
+const getVectorStatus = (doc: any): number | undefined => {
+  return resolveVectorStatus(doc.vectorStatus, doc.vectorTaskId)
+}
+
+const getVectorStatusLabel = (doc: any): string => {
+  const status = getVectorStatus(doc)
+  if (status === undefined || status === null) return '未处理'
+  return vectorStatusConfig[status]?.label || '未知'
+}
+
+const getVectorStatusType = (doc: any): string => {
+  const status = getVectorStatus(doc)
+  if (status === undefined || status === null) return ''
+  return vectorStatusConfig[status]?.type || 'info'
+}
+
+const showProgress = (doc: any): boolean => {
+  return getVectorStatus(doc) === VectorTaskStatus.PROCESSING
+}
+
+const handleCancelVectorTask = async (doc: any) => {
+  if (!doc.vectorTaskId) return
+  try {
+    await ElMessageBox.confirm('确定取消该向量处理任务吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await VectorTaskApi.cancelTask(doc.vectorTaskId)
+    ElMessage.success('任务已取消')
+    if (selectedLibrary.value) {
+      loadDocuments(currentFolderId.value)
+    }
+  } catch {}
+}
+
+const isRetryable = (doc: any): boolean => {
+  const status = getVectorStatus(doc)
+  // 失败类终态 + 已取消 允许重试；已完成(COMPLETED)不显示重试
+  return doc.vectorTaskId != null && (
+    status === VectorTaskStatus.FAILED ||
+    status === VectorTaskStatus.SUBMIT_FAILED ||
+    status === VectorTaskStatus.TIMEOUT ||
+    status === VectorTaskStatus.CANCELLED
+  )
+}
+
+const handleRetryVectorTask = async (doc: any) => {
+  try {
+    await ElMessageBox.confirm('确定重新处理该文档的向量任务吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await VectorTaskApi.retryTask(doc.id)
+    ElMessage.success('已重新提交处理')
+    if (selectedLibrary.value) {
+      loadDocuments(currentFolderId.value)
+    }
+  } catch {}
+}
 
 // ========== 分类 ==========
 const categoryLoading = ref(false)
@@ -787,7 +903,7 @@ onMounted(async () => {
 
 .document-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
   border-radius: 4px;
@@ -802,6 +918,7 @@ onMounted(async () => {
   font-size: 18px;
   color: var(--el-color-primary);
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .doc-info {
@@ -809,18 +926,52 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.doc-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .doc-name {
-  display: block;
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-vector-tag {
+  flex-shrink: 0;
 }
 
 .doc-meta {
   display: block;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+
+.doc-vector-progress {
+  margin-top: 4px;
+}
+
+.doc-vector-progress .vector-progress-bar {
+  width: 100%;
+}
+
+.doc-vector-progress .vector-step-text {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+  display: block;
+}
+
+.doc-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .doc-download {

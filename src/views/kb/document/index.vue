@@ -242,6 +242,32 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="向量状态" align="center" width="160px">
+            <template #default="scope">
+              <div v-if="scope.row.vectorTaskId">
+                <el-tag
+                  :type="getVectorStatusType(scope.row)"
+                  size="small"
+                >
+                  {{ getVectorStatusLabel(scope.row) }}
+                </el-tag>
+                <!-- 处理中显示进度条 -->
+                <div v-if="showProgress(scope.row)" class="vector-progress">
+                  <el-progress
+                    :percentage="getProgress(scope.row.vectorTaskId) || 0"
+                    :stroke-width="6"
+                    :show-text="true"
+                    :text-inside="false"
+                    class="vector-progress-bar"
+                  />
+                  <span class="vector-step-text" v-if="getStep(scope.row.vectorTaskId)">
+                    {{ getStep(scope.row.vectorTaskId) }}
+                  </span>
+                </div>
+              </div>
+              <span v-else class="text-gray-400">—</span>
+            </template>
+          </el-table-column>
           <el-table-column
             label="创建时间"
             align="center"
@@ -249,7 +275,7 @@
             :formatter="dateFormatter"
             width="180px"
           />
-          <el-table-column label="操作" align="center" min-width="120px">
+          <el-table-column label="操作" align="center" min-width="160px">
             <template #default="scope">
               <el-button
                 link
@@ -259,6 +285,24 @@
                 :disabled="!canManageCurrentKb"
               >
                 编辑
+              </el-button>
+              <el-button
+                v-if="scope.row.vectorTaskId && !isTerminalStatus(getVectorStatus(scope.row))"
+                link
+                type="warning"
+                @click="handleCancelVectorTask(scope.row)"
+                :disabled="!canManageCurrentKb"
+              >
+                取消任务
+              </el-button>
+              <el-button
+                v-if="isRetryable(scope.row)"
+                link
+                type="success"
+                @click="handleRetryVectorTask(scope.row)"
+                :disabled="!canManageCurrentKb"
+              >
+                重新处理
               </el-button>
               <el-button
                 link
@@ -309,6 +353,13 @@ import download from '@/utils/download'
 import { DocumentApi, Document } from '@/api/kb/document'
 import { LibraryApi } from '@/api/kb/library'
 import { FolderApi } from '@/api/kb/folder'
+import {
+  VectorTaskApi,
+  VectorTaskStatus,
+  vectorStatusConfig,
+  isTerminalStatus
+} from '@/api/kb/vectorTask'
+import { useVectorTaskWs } from './useVectorTaskWs'
 import DocumentForm from './DocumentForm.vue'
 
 /** 知识库文件 列表 */
@@ -316,6 +367,68 @@ defineOptions({ name: 'Document' })
 
 const message = useMessage()
 const { t } = useI18n()
+
+// ========== 向量任务 WebSocket 监听 ==========
+const { resolveVectorStatus, getProgress, getStep } = useVectorTaskWs()
+
+/** 获取文档的向量状态（优先使用 WebSocket 实时数据） */
+const getVectorStatus = (row: Document): number | undefined => {
+  return resolveVectorStatus(row.vectorStatus, row.vectorTaskId)
+}
+
+/** 获取向量状态标签 */
+const getVectorStatusLabel = (row: Document): string => {
+  const status = getVectorStatus(row)
+  if (status === undefined || status === null) return '未处理'
+  const config = vectorStatusConfig[status]
+  return config?.label || '未知'
+}
+
+/** 获取向量状态标签类型 */
+const getVectorStatusType = (row: Document): string => {
+  const status = getVectorStatus(row)
+  if (status === undefined || status === null) return ''
+  const config = vectorStatusConfig[status]
+  return config?.type || 'info'
+}
+
+/** 是否显示进度条 */
+const showProgress = (row: Document): boolean => {
+  const status = getVectorStatus(row)
+  return status === VectorTaskStatus.PROCESSING
+}
+
+/** 取消向量任务 */
+const handleCancelVectorTask = async (row: Document) => {
+  if (!row.vectorTaskId) return
+  try {
+    await message.confirm('确定取消该向量处理任务吗？')
+    await VectorTaskApi.cancelTask(row.vectorTaskId)
+    message.success('任务已取消')
+    await getList()
+  } catch {}
+}
+
+/** 是否可重试：失败类终态 + 已取消（FAILED / SUBMIT_FAILED / TIMEOUT / CANCELLED） */
+const isRetryable = (row: Document): boolean => {
+  const status = getVectorStatus(row)
+  return row.vectorTaskId != null && (
+    status === VectorTaskStatus.FAILED ||
+    status === VectorTaskStatus.SUBMIT_FAILED ||
+    status === VectorTaskStatus.TIMEOUT ||
+    status === VectorTaskStatus.CANCELLED
+  )
+}
+
+/** 重试向量任务 */
+const handleRetryVectorTask = async (row: Document) => {
+  try {
+    await message.confirm('确定重新处理该文档的向量任务吗？')
+    await VectorTaskApi.retryTask(row.id)
+    message.success('已重新提交处理')
+    await getList()
+  } catch {}
+}
 
 const loading = ref(true)
 const list = ref<Document[]>([])
@@ -658,5 +771,20 @@ const loadLibraryOptions = async () => {
 .current-folder-label {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.vector-progress {
+  margin-top: 4px;
+}
+
+.vector-progress-bar {
+  width: 100%;
+}
+
+.vector-step-text {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+  display: block;
 }
 </style>

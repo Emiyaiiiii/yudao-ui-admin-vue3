@@ -15,6 +15,8 @@ export interface Document {
           downloadCount: number; // 下载次数
           viewCount: number; // 查看次数
           status: number; // 状态: 0=正常, 1=禁用
+          vectorTaskId?: string; // 向量处理任务ID
+          vectorStatus?: number; // 向量处理状态: 0=待处理 1=处理中 2=已完成 3=失败 4=提交失败 5=超时 6=已取消
   }
 
 // 知识库文件 API
