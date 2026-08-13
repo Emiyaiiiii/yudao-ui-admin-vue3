@@ -71,9 +71,10 @@
             <el-table-column prop="externalTime" label="发布时间" width="160" show-overflow-tooltip />
             <el-table-column prop="externalCrdept" label="部门" width="120" show-overflow-tooltip />
             <el-table-column prop="retryCount" label="重试" width="55" align="center" />
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
                 <el-button text type="primary" size="small" @click="openRecordDetail(row)">详情</el-button>
+                <el-button text type="warning" size="small" @click="handleParse(row)">解析</el-button>
               </template>
             </el-table-column>
             <template #empty>
@@ -127,6 +128,9 @@
                   {{ row.syncEnabled ? '启用' : '禁用' }}
                 </el-tag>
               </template>
+            </el-table-column>
+            <el-table-column prop="deptName" label="所属部门" width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.deptName || '—' }}</template>
             </el-table-column>
             <el-table-column label="记录统计" width="160">
               <template #default="{ row }">
@@ -280,6 +284,18 @@
         <el-form-item label="启用同步" prop="syncEnabled">
           <el-switch v-model="sourceFormData.syncEnabled" :active-value="1" :inactive-value="0" />
         </el-form-item>
+        <el-form-item label="所属部门" prop="dbDept">
+          <el-tree-select
+            v-model="sourceFormData.dbDept"
+            :data="deptTree"
+            :props="{ label: 'name', value: 'id' }"
+            check-strictly
+            default-expand-all
+            clearable
+            placeholder="请选择所属部门"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-divider content-position="left">数据库配置</el-divider>
         <el-row :gutter="12">
           <el-col :span="14">
@@ -421,12 +437,14 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ContentWrap } from '@/components/ContentWrap'
 import dayjs from 'dayjs'
+import { handleTree } from '@/utils/tree'
 import {
   NewsSourceApi, NewsRecordApi, NewsSyncLogApi,
   NEWS_STATUS_OPTIONS, SYNC_TYPE_OPTIONS, SYNC_STATUS_OPTIONS,
   type NewsSource, type NewsRecord, type NewsSyncLog, type NewsStats,
   type NewsSourcePageReq, type NewsRecordPageReq, type NewsSyncLogPageReq,
 } from '@/api/kb/news'
+import { getSimpleDeptList } from '@/api/system/dept'
 
 // ========== 统计 ==========
 const stats = ref<Partial<NewsStats>>({})
@@ -499,6 +517,16 @@ async function handleBatchDelete() {
   } catch (e) { if (e !== 'cancel') console.error(e) }
 }
 
+async function handleParse(row: NewsRecord) {
+  try {
+    const res = await NewsRecordApi.parse(row.id)
+    ElMessage.success(res?.message || '解析任务已提交')
+    await loadRecords()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '解析失败')
+  }
+}
+
 // 记录详情
 const recordDetailVisible = ref(false)
 const currentRecord = ref<NewsRecord | null>(null)
@@ -519,6 +547,14 @@ const sourcePagination = reactive({ pageNo: 1, pageSize: 20, total: 0 })
 const sourceFilters = reactive<NewsSourcePageReq & { search?: string }>({
   pageNo: 1, pageSize: 20, search: '', syncEnabled: undefined,
 })
+const deptTree = ref<any[]>([])
+
+async function loadDeptTree() {
+  try {
+    const deptData = await getSimpleDeptList()
+    deptTree.value = handleTree(deptData)
+  } catch { /* noop */ }
+}
 
 async function loadSources() {
   sourceLoading.value = true
@@ -541,7 +577,7 @@ const sourceFormRef = ref()
 const sourceSubmitting = ref(false)
 const sourceFormData = reactive<any>({
   id: null, name: '', dbHost: '', dbPort: 3306, dbName: '', dbUser: '', dbPassword: '',
-  tableName: '', syncEnabled: 1,
+  tableName: '', syncEnabled: 1, dbDept: undefined as number | undefined,
   idField: 'id', titleField: 'doctitle', contentField: 'doccontent',
   channelField: '', timeField: '', urlField: '', crdeptField: '', cruserField: '',
 })
@@ -558,6 +594,7 @@ const sourceFormRules = {
 }
 
 function openSourceDialog(source?: NewsSource) {
+  loadDeptTree()
   if (source) {
     sourceDialogMode.value = 'edit'
     Object.assign(sourceFormData, { ...source, id: source.id })
@@ -567,7 +604,7 @@ function openSourceDialog(source?: NewsSource) {
     sourceDialogMode.value = 'create'
     Object.assign(sourceFormData, {
       id: null, name: '', dbHost: '', dbPort: 3306, dbName: '', dbUser: '', dbPassword: '',
-      tableName: '', syncEnabled: 1,
+      tableName: '', syncEnabled: 1, dbDept: undefined as number | undefined,
       idField: 'id', titleField: 'doctitle', contentField: 'doccontent',
       channelField: '', timeField: '', urlField: '', crdeptField: '', cruserField: '',
     })

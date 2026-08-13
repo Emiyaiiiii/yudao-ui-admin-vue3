@@ -23,6 +23,8 @@ export interface NewsSource {
   // 同步配置
   syncEnabled: number
   syncInterval: number
+  dbDept?: number
+  deptName?: string
   lastSyncTime?: string
   // 统计
   totalRecords: number
