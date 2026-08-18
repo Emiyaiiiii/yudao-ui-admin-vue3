@@ -40,8 +40,14 @@ export default {
     return res as unknown as Promise<T>
   },
   upload: async <T = any>(option: any) => {
-    option.headersType = 'multipart/form-data'
-    const res = await request({ method: 'POST', ...option })
+    // FormData 上传：让浏览器自动设置 Content-Type 和 boundary，并延长超时时间（大文件上传）
+    const { headersType, headers: customHeaders, ...restOption } = option
+    const res = await service({
+      method: 'POST',
+      timeout: 120000, // 2 分钟超时，覆盖默认 30s
+      ...restOption,
+      headers: customHeaders || {} // 不设置默认 Content-Type
+    })
     return res as unknown as Promise<T>
   }
 }
