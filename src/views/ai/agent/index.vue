@@ -68,19 +68,10 @@
         </template>
       </el-table-column>
       <el-table-column label="创建时间" align="center" prop="createTime" :formatter="dateFormatter" width="180px" />
-      <el-table-column label="操作" align="center" min-width="320px">
+      <el-table-column label="操作" align="center" min-width="200px">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)">
+          <el-button link type="primary" @click="openDetail(scope.row.id)" v-hasPermi="['ai-agent:agent:query']">
             详情
-          </el-button>
-          <el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['ai-agent:agent:update']">
-            编辑
-          </el-button>
-          <el-button link type="success" @click="openBindMcp(scope.row)" v-hasPermi="['ai-agent:agent-mcp:query']">
-            MCP
-          </el-button>
-          <el-button link type="warning" @click="openBindSkill(scope.row)" v-hasPermi="['ai-agent:agent:query']">
-            Skill
           </el-button>
           <el-button link type="primary" @click="handleToggle(scope.row)" v-hasPermi="['ai-agent:agent:update']">
             {{ scope.row.status === 1 ? '停用' : '启用' }}
@@ -99,11 +90,8 @@
     />
   </ContentWrap>
 
-  <!-- 表单弹窗：添加/修改 -->
+  <!-- 表单弹窗：新增 -->
   <AgentForm ref="formRef" @success="getList" />
-  <!-- 绑定弹窗 -->
-  <AgentBindMcp ref="bindMcpRef" />
-  <AgentBindSkill ref="bindSkillRef" />
   <!-- 详情抽屉 -->
   <AgentDetail ref="detailRef" />
 </template>
@@ -113,8 +101,6 @@ import { dateFormatter } from '@/utils/formatTime'
 import { AgentApi, Agent } from '@/api/ai/agent'
 import { AgentRemoteApi } from '@/api/ai/agentRemote'
 import AgentForm from './AgentForm.vue'
-import AgentBindMcp from './AgentBindMcp.vue'
-import AgentBindSkill from './AgentBindSkill.vue'
 import AgentDetail from './AgentDetail.vue'
 
 /** 我的智能体 列表 */
@@ -176,22 +162,10 @@ const resetQuery = () => {
   handleQuery()
 }
 
-/** 添加/修改操作 */
+/** 添加操作 */
 const formRef = ref()
 const openForm = (type: string, id?: number) => {
   formRef.value.open(type, id)
-}
-
-/** 绑定 MCP 操作 */
-const bindMcpRef = ref()
-const openBindMcp = (row: Agent) => {
-  bindMcpRef.value.open(row.id, row.name)
-}
-
-/** 绑定 Skill 操作 */
-const bindSkillRef = ref()
-const openBindSkill = (row: Agent) => {
-  bindSkillRef.value.open(row.id, row.name)
 }
 
 /** 详情操作 */

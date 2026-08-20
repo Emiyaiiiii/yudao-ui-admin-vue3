@@ -45,5 +45,9 @@ export const McpMetaApi = {
   // 获得启用的 MCP 商店项列表
   getEnabledMcpMetaList: async () => {
     return await request.get({ url: '/ai-agent/mcp-meta/list-enabled' })
+  },
+  // 获得当前用户可见的 MCP 商店项列表（公开 + 自己的个人）
+  getVisibleMcpMetaList: async () => {
+    return await request.get({ url: '/ai-agent/mcp-meta/visible-list' })
   }
 }

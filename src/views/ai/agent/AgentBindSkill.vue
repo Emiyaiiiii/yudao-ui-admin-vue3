@@ -7,9 +7,19 @@
       show-icon
       class="mb-16px"
     />
-    <div class="mb-8px font-bold text-14px">已安装技能</div>
-    <el-table v-loading="installedLoading" :data="installedList" :stripe="true" size="small">
-      <el-table-column label="技能名称" align="center" prop="name" min-width="140px">
+    <div class="flex items-center justify-between mb-8px">
+      <span class="font-bold text-14px">已安装技能</span>
+      <el-input
+        v-model="installedSearch"
+        placeholder="搜索名称 / 标识"
+        clearable
+        class="!w-220px"
+      >
+        <template #prefix><Icon icon="ep:search" /></template>
+      </el-input>
+    </div>
+    <el-table v-loading="installedLoading" :data="pagedInstalled" :stripe="true" size="small">
+      <el-table-column label="技能名称" align="center" min-width="140px">
         <template #default="scope">
           {{ scope.row.name || scope.row.skill_key || scope.row.skillName || '-' }}
         </template>
@@ -32,9 +42,26 @@
         </template>
       </el-table-column>
     </el-table>
+    <Pagination
+      v-if="filteredInstalled.length > pageSize"
+      :total="filteredInstalled.length"
+      v-model:page="installedPage"
+      v-model:limit="pageSize"
+      class="-mb-1px"
+    />
 
-    <div class="mt-16px mb-8px font-bold text-14px">技能商店（可安装）</div>
-    <el-table v-loading="storeLoading" :data="storeList" :stripe="true" size="small">
+    <div class="flex items-center justify-between mt-16px mb-8px">
+      <span class="font-bold text-14px">技能商店（可安装）</span>
+      <el-input
+        v-model="storeSearch"
+        placeholder="搜索名称 / 标识 / 描述"
+        clearable
+        class="!w-220px"
+      >
+        <template #prefix><Icon icon="ep:search" /></template>
+      </el-input>
+    </div>
+    <el-table v-loading="storeLoading" :data="pagedStore" :stripe="true" size="small">
       <el-table-column label="图标" align="center" width="50px">
         <template #default="scope">
           <span class="text-18px">{{ scope.row.icon || '📦' }}</span>
@@ -72,6 +99,13 @@
         </template>
       </el-table-column>
     </el-table>
+    <Pagination
+      v-if="filteredStore.length > pageSize"
+      :total="filteredStore.length"
+      v-model:page="storePage"
+      v-model:limit="pageSize"
+      class="-mb-1px"
+    />
 
     <!-- 技能详情弹窗 -->
     <el-dialog v-model="detailVisible" :title="`技能详情：${skillDetail?.name || ''}`" width="640px" append-to-body>
@@ -108,6 +142,39 @@ const agentId = ref<number>()
 const agentName = ref('')
 const detailVisible = ref(false) // 技能详情弹窗
 const skillDetail = ref<any>() // 技能详情（含 YAML）
+
+// 搜索与分页（前端过滤/分页）
+const pageSize = ref(10)
+const installedSearch = ref('')
+const storeSearch = ref('')
+const installedPage = ref(1)
+const storePage = ref(1)
+
+/** 已安装列表：按 名称 / 标识 过滤 */
+const filteredInstalled = computed(() => {
+  const kw = installedSearch.value.trim().toLowerCase()
+  if (!kw) return installedList.value
+  return installedList.value.filter((s) => {
+    const name = String(s.name || s.skill_key || s.skillName || '').toLowerCase()
+    return name.includes(kw)
+  })
+})
+/** 已安装列表：分页后的数据 */
+const pagedInstalled = computed(() => filteredInstalled.value.slice((installedPage.value - 1) * pageSize.value, installedPage.value * pageSize.value))
+
+/** 商店列表：按 名称 / 标识 / 描述 过滤 */
+const filteredStore = computed(() => {
+  const kw = storeSearch.value.trim().toLowerCase()
+  if (!kw) return storeList.value
+  return storeList.value.filter((s) => {
+    const name = String(s.displayName || '').toLowerCase()
+    const skill = String(s.skillName || '').toLowerCase()
+    const desc = String(s.description || '').toLowerCase()
+    return name.includes(kw) || skill.includes(kw) || desc.includes(kw)
+  })
+})
+/** 商店列表：分页后的数据 */
+const pagedStore = computed(() => filteredStore.value.slice((storePage.value - 1) * pageSize.value, storePage.value * pageSize.value))
 
 /** 打开弹窗 */
 const open = async (id: number, name: string) => {

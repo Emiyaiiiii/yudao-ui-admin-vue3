@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
 import MarkdownIt from 'markdown-it'
-import 'highlight.js/styles/vs2015.min.css'
+import markdownItMultimdTable from 'markdown-it-multimd-table'
 import hljs from 'highlight.js'
 
 // 定义组件属性
@@ -21,10 +21,11 @@ const { copy } = useClipboard({ legacy: true }) // 初始化 copy 到粘贴板
 const contentRef = ref()
 
 const md = new MarkdownIt({
+  breaks: true, // 单换行渲染为 <br>，避免普通文本被折叠成一行
   highlight: function (str, lang) {
     if (lang && hljs.getLanguage(lang)) {
       try {
-        const copyHtml = `<div id="copy" data-copy='${str}' style="position: absolute; right: 10px; top: 5px; color: #fff;cursor: pointer;">复制</div>`
+        const copyHtml = `<div id="copy" data-copy='${str}' style="position: absolute; right: 10px; top: 5px; color: var(--el-text-color-secondary); cursor: pointer;">复制</div>`
         return `<pre style="position: relative;">${copyHtml}<code class="hljs">${hljs.highlight(lang, str, true).value}</code></pre>`
       } catch (__) {}
     }
@@ -32,9 +33,41 @@ const md = new MarkdownIt({
   }
 })
 
+md.use(markdownItMultimdTable, {
+  multiline: true,
+  rowspan: true,
+  headerless: false,
+})
+
+/**
+ * 松散块压缩：当内容绝大多数「空行分隔的块」都是单行（即"每行一段"的松散排版）
+ * 时，把行间空行压成单换行，避免 markdown 按标准语义把每一行渲染成独立段落，
+ * 导致显示成「每行都空一行」。代码块内容原样保留，多行段落型 markdown 不受影响。
+ */
+const compactLooseBlocks = (content: string): string => {
+  if (!content) return content
+  // 1. 保护围栏代码块
+  const fences: string[] = []
+  const masked = content.replace(/```[\s\S]*?```/g, (m) => {
+    fences.push(m)
+    return `\u0000${fences.length - 1}\u0000`
+  })
+  // 2. 统计空行分隔的块，判断是否为"每行一段"
+  const nonEmpty = masked.split(/\n\s*\n/).filter((b) => b.trim())
+  if (nonEmpty.length === 0) return content
+  const singleLineCount = nonEmpty.filter((b) => !b.includes('\n')).length
+  // 3. 绝大多数块是单行 → 压缩行间空行
+  if (singleLineCount / nonEmpty.length >= 0.7) {
+    const compacted = masked.replace(/\n\s*\n/g, '\n')
+    // 4. 恢复代码块
+    return compacted.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => fences[Number(i)] ?? '')
+  }
+  return content
+}
+
 /** 渲染 markdown */
 const renderedMarkdown = computed(() => {
-  return md.render(props.content)
+  return md.render(compactLooseBlocks(props.content))
 })
 
 /** 初始化 **/
@@ -57,21 +90,55 @@ onMounted(async () => {
   font-weight: 400;
   line-height: 1.6rem;
   letter-spacing: 0;
-  color: #3b3e55;
+  color: var(--el-text-color-primary);
+  background: transparent !important;
   text-align: left;
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  > * {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
 
   pre {
     position: relative;
+    background: var(--el-fill-color-light) !important;
+    border: 1px solid var(--el-border-color-lighter) !important;
+    border-radius: 8px;
+    color: var(--el-text-color-primary) !important;
+    overflow-x: auto;
+    box-shadow: none;
+    margin: 0 0 0.5rem 0;
+    padding: 12px;
   }
 
-  pre code.hljs {
+  pre code.hljs,
+  .hljs {
     width: auto;
+    background: transparent !important;
+    color: var(--el-text-color-primary) !important;
+    display: block;
+    padding: 0;
+    margin: 0;
   }
 
   code.hljs {
     width: auto;
-    padding-top: 20px;
+    padding: 2px 6px;
     border-radius: 6px;
+    background: transparent !important;
+    color: var(--el-text-color-primary) !important;
 
     @media screen and (width >= 1536px) {
       width: 960px;
@@ -92,7 +159,15 @@ onMounted(async () => {
 
   p,
   code.hljs {
-    margin-bottom: 16px;
+    margin-bottom: 0;
+  }
+
+  code:not(pre code) {
+    background: var(--el-fill-color-light) !important;
+    color: var(--el-text-color-primary) !important;
+    border: 1px solid var(--el-border-color-lighter) !important;
+    border-radius: 4px;
+    padding: 2px 6px;
   }
 
   p {
@@ -110,7 +185,7 @@ onMounted(async () => {
   h6 {
     margin: 24px 0 8px;
     font-weight: 600;
-    color: #3b3e55;
+    color: var(--el-text-color-primary);
   }
 
   h1 {
@@ -150,16 +225,20 @@ onMounted(async () => {
     margin: 0 0 8px;
     font-size: 16px;
     line-height: 24px;
-    color: #3b3e55; // var(--color-CG600);
+    color: var(--el-text-color-primary);
   }
 
   li {
-    margin: 4px 0 0 20px;
-    margin-bottom: 1rem;
+    margin: 0 0 0 20px;
+    color: var(--el-text-color-primary);
+  }
+
+  li:last-child {
+    margin-bottom: 0; /* 列表结尾不留 16px 空白 */
   }
 
   ol > li {
-    margin-bottom: 1rem;
+    margin-bottom: 0;
     list-style-type: decimal;
     // 表达式,修复有序列表序号展示不全的问题
     // &:nth-child(n + 10) {
@@ -173,10 +252,10 @@ onMounted(async () => {
 
   ul > li {
     margin-right: 11px;
-    margin-bottom: 1rem;
+    margin-bottom: 4px;
     font-size: 16px;
     line-height: 24px;
-    color: #3b3e55; // var(--color-G900);
+    color: var(--el-text-color-primary);
     list-style-type: disc;
   }
 
@@ -184,11 +263,62 @@ onMounted(async () => {
   ol ul > li,
   ul ul,
   ul ul li {
-    margin-bottom: 1rem;
+    margin-bottom: 4px;
     margin-left: 6px;
-    // list-style: circle;
     font-size: 16px;
     list-style: none;
+    color: var(--el-text-color-primary);
+  }
+
+  blockquote {
+    margin: 12px 0;
+    padding: 8px 12px;
+    border-left: 3px solid var(--el-color-primary);
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-secondary);
+    border-radius: 6px;
+  }
+
+  table {
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    margin: 12px 0;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: transparent;
+    table-layout: auto;
+  }
+
+  thead {
+    background: var(--el-fill-color-light);
+  }
+
+  th,
+  td {
+    padding: 8px 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    vertical-align: top;
+    text-align: left;
+    color: var(--el-text-color-primary);
+    background: transparent;
+    word-break: break-word;
+  }
+
+  th {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    background: var(--el-fill-color-light);
+  }
+
+  tbody tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.015);
+  }
+
+  .dark tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
   }
 
   ul ul ul,

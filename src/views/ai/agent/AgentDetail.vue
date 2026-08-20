@@ -1,10 +1,18 @@
 <template>
   <el-drawer v-model="visible" title="智能体详情" size="640px" destroy-on-close>
+    <template #header>
+      <span class="text-16px font-600">智能体详情</span>
+      <el-button type="primary" link @click="handleEdit" v-hasPermi="['ai-agent:agent:update']">
+        <Icon icon="ep:edit" class="mr-4px" />编辑
+      </el-button>
+    </template>
     <div v-loading="loading">
       <!-- 基本信息 -->
       <el-descriptions :column="2" border class="mb-16px">
         <el-descriptions-item label="名称" :span="2">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="描述" :span="2">{{ detail.description || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="描述" :span="2">{{
+          detail.description || '-'
+        }}</el-descriptions-item>
         <el-descriptions-item label="模型">
           <el-tag size="small" type="info">{{ detail.modelProvider || 'qwen' }}</el-tag>
           <span class="ml-8px">{{ detail.modelName }}</span>
@@ -14,7 +22,9 @@
             {{ detail.enableKbTool ? '开启' : '关闭' }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="QwenPaw ID">{{ detail.qwenpawAgentId || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="QwenPaw ID">{{
+          detail.qwenpawAgentId || '-'
+        }}</el-descriptions-item>
         <el-descriptions-item label="启用状态">
           <el-tag :type="detail.status === 1 ? 'success' : 'danger'" size="small">
             {{ detail.status === 1 ? '启用' : '停用' }}
@@ -53,7 +63,12 @@
               <span>{{ scope.row.name }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="描述" prop="description" min-width="140px" show-overflow-tooltip />
+          <el-table-column
+            label="描述"
+            prop="description"
+            min-width="140px"
+            show-overflow-tooltip
+          />
           <el-table-column label="启用" width="70px">
             <template #default="scope">
               <el-switch
@@ -78,56 +93,43 @@
         </el-table>
       </div>
 
-      <!-- MCP 列表 -->
+      <!-- QwenPaw 侧实际注册的 MCP -->
       <div class="mb-16px">
         <div class="flex items-center justify-between mb-8px">
-          <span class="text-14px font-500">已绑定 MCP（{{ mcpList.length }}）</span>
-          <el-button link type="primary" @click="handleManageMcp">
-            <Icon icon="ep:setting" class="mr-4px" />管理 MCP
-          </el-button>
+          <span class="text-14px font-500">MCP（{{ remoteMcpList.length }}）</span>
+          <div>
+            <el-button link type="primary" @click="handleManageMcp">
+              <Icon icon="ep:setting" class="mr-4px" />管理 MCP
+            </el-button>
+            <el-button link type="primary" @click="loadRemote(detail.id)">
+              <Icon icon="ep:refresh" class="mr-4px" />刷新
+            </el-button>
+          </div>
         </div>
-        <el-empty v-if="mcpList.length === 0" description="未绑定 MCP" :image-size="60" />
-        <el-table v-else :data="mcpList" size="small" border>
-          <el-table-column label="名称" prop="mcpName" min-width="120px" />
-          <el-table-column label="编码" prop="mcpCode" min-width="100px" />
-          <el-table-column label="传输方式" width="110px">
+        <el-empty v-if="remoteMcpList.length === 0" description="未配置 MCP" :image-size="60" />
+        <el-table v-else :data="remoteMcpList" size="small" border>
+          <el-table-column label="MCP 名称" min-width="125px">
+            <template #default="scope">{{ scope.row.name || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="Client Key" min-width="115px">
+            <template #default="scope">{{ scope.row.key || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="启用方式" width="100px">
+            <template #default="scope">
+              <el-switch :model-value="scope.row.enabled" @change="handleToggleRemoteMcp(scope.row)" />
+            </template>
+          </el-table-column>
+          <el-table-column label="传输" width="105px">
             <template #default="scope">
               <el-tag size="small" :type="transportType(scope.row.transport)">
                 {{ scope.row.transport || '-' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="70px">
-            <template #default="scope">
-              <el-tag :type="scope.row.enabled === 1 ? 'success' : 'info'" size="small">
-                {{ scope.row.enabled === 1 ? '启用' : '停用' }}
-              </el-tag>
-            </template>
+          <el-table-column label="描述" min-width="140px" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.description || '-' }}</template>
           </el-table-column>
-        </el-table>
-      </div>
-
-      <!-- QwenPaw 侧实际注册的 MCP 服务 -->
-      <div class="mb-16px">
-        <div class="flex items-center justify-between mb-8px">
-          <span class="text-14px font-500">QwenPaw MCP 服务（{{ remoteMcpList.length }}）</span>
-          <el-button link type="primary" @click="loadRemote(detail.id)">
-            <Icon icon="ep:refresh" class="mr-4px" />刷新
-          </el-button>
-        </div>
-        <el-empty v-if="remoteMcpList.length === 0" description="QwenPaw 侧未注册 MCP" :image-size="60" />
-        <el-table v-else :data="remoteMcpList" size="small" border>
-          <el-table-column label="名称" min-width="120px">
-            <template #default="scope">{{ scope.row.name || scope.row.client_key || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="Client Key" prop="client_key" min-width="110px" />
-          <el-table-column label="传输" prop="transport" width="110px" />
-          <el-table-column label="启用" width="70px">
-            <template #default="scope">
-              <el-switch :model-value="scope.row.enabled" @change="handleToggleRemoteMcp(scope.row)" />
-            </template>
-          </el-table-column>
-          <el-table-column label="工具" width="70px" align="center">
+          <el-table-column label="工具" width="75px" align="center">
             <template #default="scope">
               <el-button link type="primary" @click="handleShowMcpTools(scope.row)">查看</el-button>
             </template>
@@ -138,12 +140,16 @@
       <!-- QwenPaw 侧实际安装的 Skills -->
       <div class="mb-16px">
         <div class="flex items-center justify-between mb-8px">
-          <span class="text-14px font-500">QwenPaw Skills（{{ remoteSkillList.length }}）</span>
+          <span class="text-14px font-500">Skills（{{ remoteSkillList.length }}）</span>
           <el-button link type="primary" @click="handleManageSkill">
             <Icon icon="ep:setting" class="mr-4px" />管理 Skill
           </el-button>
         </div>
-        <el-empty v-if="remoteSkillList.length === 0" description="QwenPaw 侧未安装 Skill" :image-size="60" />
+        <el-empty
+          v-if="remoteSkillList.length === 0"
+          description="QwenPaw 侧未安装 Skill"
+          :image-size="60"
+        />
         <el-table v-else :data="remoteSkillList" size="small" border>
           <el-table-column label="名称" min-width="120px">
             <template #default="scope">{{ scope.row.name || scope.row.skill_key || '-' }}</template>
@@ -191,10 +197,7 @@
             :max="field.max"
           />
           <!-- 开关 -->
-          <el-switch
-            v-else-if="field.type === 'boolean'"
-            v-model="toolConfigForm[field.name]"
-          />
+          <el-switch v-else-if="field.type === 'boolean'" v-model="toolConfigForm[field.name]" />
           <!-- 下拉选择 -->
           <el-select
             v-else-if="field.type === 'select'"
@@ -217,7 +220,9 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" :loading="toolConfigSaving" @click="handleSaveToolConfig">保 存</el-button>
+        <el-button type="primary" :loading="toolConfigSaving" @click="handleSaveToolConfig"
+          >保 存</el-button
+        >
         <el-button @click="toolConfigVisible = false">取 消</el-button>
       </template>
     </el-dialog>
@@ -229,7 +234,7 @@
     <!-- MCP 工具查看弹窗 -->
     <el-dialog
       v-model="mcpToolsVisible"
-      :title="`MCP 工具：${currentMcp?.name || currentMcp?.client_key || ''}`"
+      :title="`MCP 工具：${currentMcp?.name || currentMcp?.key || ''}`"
       width="560px"
       append-to-body
     >
@@ -240,15 +245,18 @@
       <el-empty v-if="mcpTools.length === 0" description="无工具" :image-size="50" />
     </el-dialog>
   </el-drawer>
+
+  <!-- 编辑弹窗 -->
+  <AgentForm ref="editFormRef" @success="handleEditSuccess" />
 </template>
 
 <script setup lang="ts">
 import { AgentApi, Agent } from '@/api/ai/agent'
-import { AgentMcpApi, AgentMcp } from '@/api/ai/agentmcp'
 import { AgentToolApi, AgentTool, AgentToolConfigField } from '@/api/ai/agentTool'
-import { AgentRemoteApi } from '@/api/ai/agentRemote'
+import { AgentRemoteApi, RemoteMcp } from '@/api/ai/agentRemote'
 import AgentBindMcp from './AgentBindMcp.vue'
 import AgentBindSkill from './AgentBindSkill.vue'
+import AgentForm from './AgentForm.vue'
 
 /** 智能体详情抽屉 */
 defineOptions({ name: 'AiAgentDetail' })
@@ -257,12 +265,12 @@ const message = useMessage()
 const visible = ref(false) // 抽屉是否显示
 const loading = ref(false) // 加载中
 const detail = ref<Agent>({} as Agent) // 智能体详情
-const mcpList = ref<AgentMcp[]>([]) // MCP 绑定列表
+const editFormRef = ref() // 编辑弹窗 Ref
 const toolList = ref<AgentTool[]>([]) // 内置工具列表
 const bindMcpRef = ref() // MCP 绑定弹窗 Ref
 const bindSkillRef = ref() // Skill 绑定弹窗 Ref
 const remoteRunning = ref(false) // QwenPaw 侧运行状态
-const remoteMcpList = ref<any[]>([]) // QwenPaw 侧注册的 MCP
+const remoteMcpList = ref<RemoteMcp[]>([]) // QwenPaw 侧注册的 MCP
 const remoteSkillList = ref<any[]>([]) // QwenPaw 侧安装的 Skills
 const mcpToolsVisible = ref(false) // MCP 工具查看弹窗
 const mcpTools = ref<any[]>([]) // MCP 工具列表
@@ -286,13 +294,11 @@ const open = async (agentId: number) => {
   visible.value = true
   loading.value = true
   try {
-    const [agent, mcp, tool] = await Promise.all([
+    const [agent, tool] = await Promise.all([
       AgentApi.getAgent(agentId),
-      AgentMcpApi.getAgentMcpList(agentId),
       AgentToolApi.listTools(agentId).catch(() => [])
     ])
     detail.value = agent
-    mcpList.value = mcp
     toolList.value = tool
   } finally {
     loading.value = false
@@ -322,7 +328,12 @@ const loadRemote = async (agentId: number) => {
 const handleToggleRemoteMcp = async (mcp: any) => {
   const target = !mcp.enabled
   try {
-    const updated = await AgentRemoteApi.toggleMcp(detail.value.id, mcp.client_key)
+    const clientKey = mcp.key
+    if (!clientKey) {
+      message.error('缺少 clientKey 字段')
+      return
+    }
+    const updated = await AgentRemoteApi.toggleMcp(detail.value.id, clientKey)
     mcp.enabled = updated?.enabled ?? target
     message.success('操作成功')
   } catch {
@@ -335,11 +346,25 @@ const handleShowMcpTools = async (mcp: any) => {
   currentMcp.value = mcp
   mcpToolsVisible.value = true
   mcpTools.value = []
-  try {
-    mcpTools.value = await AgentRemoteApi.listMcpTools(detail.value.id, mcp.client_key)
-  } catch {
-    message.error('获取工具列表失败')
+  const clientKey = mcp.key
+  if (!clientKey) {
+    message.error('缺少 clientKey 字段')
+    return
   }
+  // MCP 为懒连接，连接期间 QwenPaw 会报“连接中”，前端自动重试几次以等待连接完成
+  const maxAttempts = 3
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      mcpTools.value = await AgentRemoteApi.listMcpTools(detail.value.id, clientKey)
+      return
+    } catch {
+      // 后端已弹窗提示“MCP 服务连接中，请稍后重试”；仍未成功则短暂等待后继续重试
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+    }
+  }
+  message.error('获取工具列表失败，请稍后重试')
 }
 
 /** 切换工具启用状态 */
@@ -365,7 +390,10 @@ const handleOpenToolConfig = async (tool: AgentTool) => {
     const fields = tool.configFields || []
     fields.forEach((field: AgentToolConfigField) => {
       const value = config?.[field.name]
-      toolConfigForm[field.name] = value !== undefined && value !== null ? value : (field.default ?? (field.type === 'boolean' ? false : field.type === 'number' ? 0 : ''))
+      toolConfigForm[field.name] =
+        value !== undefined && value !== null
+          ? value
+          : (field.default ?? (field.type === 'boolean' ? false : field.type === 'number' ? 0 : ''))
     })
   } catch (e) {
     // 获取配置失败也允许打开（空表单）
@@ -388,6 +416,19 @@ const handleSaveToolConfig = async () => {
   }
 }
 
+/** 打开编辑弹窗 */
+const handleEdit = () => {
+  editFormRef.value?.open('update', detail.value.id)
+}
+
+/** 编辑成功后刷新详情与远程数据 */
+const handleEditSuccess = async () => {
+  try {
+    detail.value = await AgentApi.getAgent(detail.value.id)
+  } catch {}
+  await loadRemote(detail.value.id)
+}
+
 /** 打开 MCP 绑定管理弹窗 */
 const handleManageMcp = () => {
   bindMcpRef.value?.open(detail.value.id, detail.value.name)
@@ -398,9 +439,8 @@ const handleManageSkill = () => {
   bindSkillRef.value?.open(detail.value.id, detail.value.name)
 }
 
-/** MCP 绑定数据变更后刷新（含 QwenPaw 侧注册） */
+/** MCP 绑定数据变更后刷新（重读 QwenPaw 侧注册） */
 const handleMcpSuccess = async () => {
-  mcpList.value = await AgentMcpApi.getAgentMcpList(detail.value.id)
   await loadRemote(detail.value.id)
 }
 

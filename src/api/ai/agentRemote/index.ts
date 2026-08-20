@@ -9,7 +9,7 @@ export interface AgentStatus {
 
 /** QwenPaw 侧注册的 MCP 服务 */
 export interface RemoteMcp {
-  client_key?: string
+  key: string
   name?: string
   transport?: string
   enabled?: boolean
