@@ -9,6 +9,7 @@ export interface Category {
           parentId: number; // 父分类ID: 0=顶级分类
           sort: number; // 排序
           status: number; // 状态: 0=启用, 1=禁用
+          columnConfig?: string; // 表头配置(JSON): 该分类下知识库列表的动态表头
     children?: Category[];
   }
 

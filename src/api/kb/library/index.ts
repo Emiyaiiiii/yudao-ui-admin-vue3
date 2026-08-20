@@ -14,6 +14,8 @@ export interface Library {
   isPublic?: number // 是否公开到广场: 0=否, 1=是
   isProject?: number // 是否项目成果库: 0=否, 1=是
   shareDeptIds?: number[] // 共享部门ID列表
+  creator?: string // 创建人
+  extValues?: Record<string, string> // 自定义字段值(key=字段key, value=字段值字符串)
 }
 
 // 知识库 API
