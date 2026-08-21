@@ -78,18 +78,6 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="70px" align="center">
-            <template #default="scope">
-              <el-button
-                v-if="scope.row.requiresConfig"
-                link
-                type="primary"
-                @click="handleOpenToolConfig(scope.row)"
-              >
-                配置
-              </el-button>
-            </template>
-          </el-table-column>
         </el-table>
       </div>
 
@@ -110,9 +98,6 @@
         <el-table v-else :data="remoteMcpList" size="small" border>
           <el-table-column label="MCP 名称" min-width="125px">
             <template #default="scope">{{ scope.row.name || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="Client Key" min-width="115px">
-            <template #default="scope">{{ scope.row.key || '-' }}</template>
           </el-table-column>
           <el-table-column label="启用方式" width="100px">
             <template #default="scope">
@@ -154,8 +139,14 @@
           <el-table-column label="名称" min-width="120px">
             <template #default="scope">{{ scope.row.name || scope.row.skill_key || '-' }}</template>
           </el-table-column>
-          <el-table-column label="编码" prop="skill_key" min-width="110px" />
-          <el-table-column label="版本" prop="version" width="80px" />
+          <el-table-column label="描述" min-width="180px" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.description || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="版本" width="80px">
+            <template #default="scope">
+              {{ scope.row.version || scope.row.version_text || scope.row.versionText || '-' }}
+            </template>
+          </el-table-column>
           <el-table-column label="启用" width="70px">
             <template #default="scope">
               <el-tag :type="scope.row.enabled ? 'success' : 'info'" size="small">

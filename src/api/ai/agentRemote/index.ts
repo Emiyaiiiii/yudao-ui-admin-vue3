@@ -72,6 +72,21 @@ export const AgentRemoteApi = {
   listMcpTools: async (agentId: number, clientKey: string) => {
     return await request.get({ url: '/ai-agent/agent-remote/mcp/tools', params: { agentId, clientKey } })
   },
+  // 更新智能体某个 MCP 的工具白名单（QwenPaw 侧，对任意已注册 MCP 生效）
+  updateMcpToolsWhitelist: async (agentId: number, clientKey: string, toolsJson?: string) => {
+    return await request.put({
+      url: '/ai-agent/agent-remote/mcp/tools',
+      params: { agentId, clientKey, toolsJson }
+    })
+  },
+  // 更新智能体某个 MCP client 的完整配置（QwenPaw 侧，含 transport/url/headers/command/args/env/cwd/tools）
+  updateMcp: async (agentId: number, clientKey: string, config: Record<string, any>) => {
+    return await request.put({
+      url: '/ai-agent/agent-remote/mcp',
+      params: { agentId, clientKey },
+      data: config
+    })
+  },
   // 获得智能体在 QwenPaw 侧安装的 Skills 列表
   listSkills: async (agentId: number) => {
     return await request.get({ url: '/ai-agent/agent-remote/skills', params: { agentId } })

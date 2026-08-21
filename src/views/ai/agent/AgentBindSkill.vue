@@ -1,5 +1,13 @@
 <template>
-  <Dialog :title="'Skill 绑定 - ' + agentName" v-model="dialogVisible" width="800px" append-to-body>
+  <Dialog
+    class="skill-bind-dialog"
+    :title="'Skill 绑定 - ' + agentName"
+    v-model="dialogVisible"
+    width="800px"
+    append-to-body
+    scroll
+    :max-height="'520px'"
+  >
     <el-alert
       title="从 Java 技能商店选择技能安装到智能体，技能来源为 QwenPaw 技能池（按可见性过滤）。创建智能体时也可在表单中勾选初始技能。"
       type="info"
@@ -47,7 +55,6 @@
       :total="filteredInstalled.length"
       v-model:page="installedPage"
       v-model:limit="pageSize"
-      class="-mb-1px"
     />
 
     <div class="flex items-center justify-between mt-16px mb-8px">
@@ -104,7 +111,6 @@
       :total="filteredStore.length"
       v-model:page="storePage"
       v-model:limit="pageSize"
-      class="-mb-1px"
     />
 
     <!-- 技能详情弹窗 -->
@@ -124,6 +130,7 @@
     </el-dialog>
   </Dialog>
 </template>
+
 <script setup lang="ts">
 import { AgentRemoteApi } from '@/api/ai/agentRemote'
 import { SkillMetaApi, SkillMeta } from '@/api/ai/skillmeta'
@@ -253,3 +260,9 @@ const handleShowDetail = async (row: SkillMeta) => {
   }
 }
 </script>
+
+<style lang="scss" scoped>
+:deep(.skill-bind-dialog .el-dialog__body) {
+  padding-bottom: 28px !important;
+}
+</style>

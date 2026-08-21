@@ -134,28 +134,65 @@
     </template>
   </Dialog>
 
-  <!-- 工具白名单配置弹窗 -->
-  <el-dialog v-model="configVisible" title="MCP 工具白名单" width="640px" append-to-body>
-    <el-form :model="configForm" label-width="120px">
-      <el-form-item label="Client Key">
-        <el-input v-model="configForm.clientKey" disabled />
-      </el-form-item>
-      <el-form-item label="工具白名单">
+  <!-- MCP 配置弹窗：先改 JSON 配置让 MCP 能连接/启动，再配置工具白名单 -->
+  <el-dialog v-model="configVisible" title="MCP 配置" width="720px" append-to-body>
+    <el-tabs v-model="configTab">
+      <el-tab-pane label="配置文件" name="json">
         <el-input
-          v-model="configForm.toolsWhitelist"
+          v-model="configJson"
           type="textarea"
-          :rows="4"
+          :rows="18"
           class="font-mono"
-          placeholder='可选。JSON 数组，如 ["search","fetch"]。留空则继承商店模板配置。保存会自动重新下发到 QwenPaw。'
+          spellcheck="false"
+          placeholder='MCP client 完整配置 JSON。含 transport/url/headers/command/args/env/cwd/tools 等，可填 API Key（env）等参数。保存后整份更新到 QwenPaw。'
         />
-      </el-form-item>
-      <el-alert
-        title="保存后会重新下发该 MCP 到 QwenPaw（先删后建生效）。仅对「从商店挂载」的 MCP 生效。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
-    </el-form>
+        <el-alert
+          class="mt-8px"
+          title="先确保 transport、url/command、args、env 等正确，让 MCP 能启动/连接；之后切到「工具白名单」勾选工具才有效。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+      </el-tab-pane>
+      <el-tab-pane label="工具白名单" name="tools">
+        <div v-loading="toolsLoading">
+          <el-checkbox
+            :model-value="isAllEnabled"
+            :indeterminate="isIndeterminate"
+            @change="handleCheckAll"
+          >
+            启用全部工具
+          </el-checkbox>
+          <el-empty
+            v-if="!toolsLoading && toolOptions.length === 0"
+            description="该 MCP 没有可用工具，请先在「配置文件」修正配置并确保能连接/启动"
+            :image-size="80"
+          />
+          <div v-else-if="toolOptions.length" class="mt-8px max-h-300px overflow-auto">
+            <div
+              v-for="t in toolOptions"
+              :key="t.name"
+              class="flex items-center justify-between border-b border-gray-100 py-8px"
+            >
+              <div class="min-w-0 mr-12px">
+                <div class="font-medium text-14px">{{ t.name }}</div>
+                <div class="text-12px text-gray-400 truncate">
+                  {{ t.description || '-' }}
+                </div>
+              </div>
+              <el-switch v-model="toolEnabledMap[t.name]" />
+            </div>
+          </div>
+          <el-alert
+            class="mt-8px"
+            title="用开关开启/关闭该 MCP 的工具。全部关闭等价于移除白名单（启用全部）。保存即更新到 QwenPaw（QwenPaw 内置 MCP、自定义 MCP 均生效）。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+        </div>
+      </el-tab-pane>
+    </el-tabs>
     <template #footer>
       <el-button @click="configVisible = false">取 消</el-button>
       <el-button type="primary" :loading="configLoading" @click="handleConfigSubmit">
@@ -227,13 +264,39 @@ const customForm = ref({
   json: ''
 })
 
-// 配置弹窗（编辑该 client 的工具白名单，重新下发到 QwenPaw）
+// 配置弹窗：①「配置文件」编辑 MCP 完整 JSON 并更新到 QwenPaw；②「工具白名单」用开关配置
 const configVisible = ref(false)
 const configLoading = ref(false)
 const configForm = ref({
-  clientKey: '',
-  toolsWhitelist: ''
+  clientKey: ''
 })
+const configTab = ref<'json' | 'tools'>('json')
+/** 「配置文件」页签的可编辑 JSON 文本 */
+const configJson = ref('')
+const toolsLoading = ref(false)
+/** 该 MCP 的可用工具列表 */
+const toolOptions = ref<{ name: string; description?: string; enabled?: boolean }[]>([])
+/** 每个工具的开关状态：name -> 是否启用 */
+const toolEnabledMap = ref<Record<string, boolean>>({})
+
+/** 全部工具是否都已启用 */
+const isAllEnabled = computed({
+  get: () =>
+    toolOptions.value.length > 0 &&
+    toolOptions.value.every((t) => !!toolEnabledMap.value[t.name]),
+  set: (val: boolean) => {
+    toolOptions.value.forEach((t) => (toolEnabledMap.value[t.name] = val))
+  }
+})
+/** 是否部分选中 */
+const isIndeterminate = computed(() => {
+  const on = toolOptions.value.filter((t) => toolEnabledMap.value[t.name]).length
+  return on > 0 && on < toolOptions.value.length
+})
+/** 全选/全不选 */
+const handleCheckAll = (val: boolean | string | number) => {
+  isAllEnabled.value = !!val
+}
 
 /** 打开弹窗 */
 const open = async (id: number, name: string) => {
@@ -312,55 +375,95 @@ const handleUninstall = async (row: any) => {
   } catch {}
 }
 
-/** 按 code 在商店里找到模板项 */
-const findStoreByCode = (code: string) => {
-  return storeList.value.find((m) => m.code === code)
+/** 从已挂载条目构建可编辑配置 JSON（剔除 key/oauth_status/access_summary 等只读字段） */
+const buildEditableConfig = (row: any) => {
+  const out: any = {}
+  ;[
+    'name',
+    'description',
+    'enabled',
+    'transport',
+    'url',
+    'headers',
+    'command',
+    'args',
+    'env',
+    'cwd',
+    'tools'
+  ].forEach((k) => {
+    if (row[k] !== undefined) {
+      out[k] = row[k]
+    }
+  })
+  return out
 }
 
-/** 打开配置弹窗（编辑工具白名单；仅商店模板项支持，自定义 JSON 请重新下发） */
+/** 打开配置弹窗：预填完整配置 JSON，并加载该 MCP 的可用工具供白名单页签使用 */
 const handleConfig = async (row: any) => {
   const code = row.key || row.client_key || row.clientKey || row.name
-  const meta = findStoreByCode(code)
-  if (!meta) {
-    message.warning('该 MCP 非商店模板项，请用「自定义 JSON」重新下发配置')
-    return
-  }
-  configForm.value = {
-    clientKey: code,
-    toolsWhitelist: ''
-  }
+  if (!code) return
+  configForm.value = { clientKey: code }
+  configJson.value = JSON.stringify(buildEditableConfig(row), null, 2)
+  configTab.value = 'json'
   configVisible.value = true
+  toolsLoading.value = true
+  try {
+    const tools = await AgentRemoteApi.listMcpTools(agentId.value, code)
+    toolOptions.value = tools
+    const map: Record<string, boolean> = {}
+    tools.forEach((t: any) => (map[t.name] = !!t.enabled))
+    toolEnabledMap.value = map
+  } finally {
+    toolsLoading.value = false
+  }
 }
 
-/** 保存配置：校验白名单后，按商店模板重新下发 QwenPaw（先删后建生效） */
+/** 保存配置：按当前页签更新到 QwenPaw（配置文件=整份 JSON；工具白名单=开关集合） */
 const handleConfigSubmit = async () => {
-  const { clientKey, toolsWhitelist } = configForm.value
-  if (toolsWhitelist && toolsWhitelist.trim()) {
+  if (configTab.value === 'json') {
+    // ① 配置文件：校验并整份更新
+    let parsed: any
     try {
-      const arr = JSON.parse(toolsWhitelist)
-      if (!Array.isArray(arr)) {
-        throw new Error('必须是数组')
-      }
-    } catch (e: any) {
-      message.error('工具白名单 JSON 格式错误（需为数组）：' + (e?.message || ''))
+      parsed = JSON.parse(configJson.value || '{}')
+    } catch {
+      message.error('配置 JSON 格式错误')
       return
     }
-  }
-  const meta = findStoreByCode(clientKey)
-  if (!meta) {
-    message.warning('该 MCP 非商店模板项，无法保存')
-    return
-  }
-  configLoading.value = true
-  try {
-    await AgentRemoteApi.deleteMcp(agentId.value, clientKey)
-    await AgentRemoteApi.registerMcp(buildStoreRegisterReq(meta, toolsWhitelist))
-    message.success('保存成功')
-    configVisible.value = false
-    await getInstalledList()
-    emit('success')
-  } finally {
-    configLoading.value = false
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      message.error('配置必须是 JSON 对象')
+      return
+    }
+    configLoading.value = true
+    try {
+      await AgentRemoteApi.updateMcp(agentId.value, configForm.value.clientKey, parsed)
+      message.success('保存成功')
+      configVisible.value = false
+      await getInstalledList()
+      emit('success')
+    } finally {
+      configLoading.value = false
+    }
+  } else {
+    // ② 工具白名单
+    if (toolsLoading.value) return
+    configLoading.value = true
+    try {
+      const clientKey = configForm.value.clientKey
+      const enabledNames = toolOptions.value
+        .filter((t) => toolEnabledMap.value[t.name])
+        .map((t) => t.name)
+      const allOn = enabledNames.length === toolOptions.value.length
+      // 部分启用才下发白名单；全部启用或未启用任何工具 = 移除白名单（启用全部）
+      const whitelist =
+        allOn || enabledNames.length === 0 ? undefined : JSON.stringify(enabledNames)
+      await AgentRemoteApi.updateMcpToolsWhitelist(agentId.value, clientKey, whitelist)
+      message.success('保存成功')
+      configVisible.value = false
+      await getInstalledList()
+      emit('success')
+    } finally {
+      configLoading.value = false
+    }
   }
 }
 

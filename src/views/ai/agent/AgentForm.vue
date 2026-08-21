@@ -10,33 +10,40 @@
       <el-form-item label="智能体名称" prop="name">
         <el-input v-model="formData.name" placeholder="请输入智能体名称" />
       </el-form-item>
+      <el-form-item label="模型供应商" prop="modelProvider">
+        <el-select
+          v-model="selectedProvider"
+          placeholder="请先选择供应商"
+          style="width: 100%"
+          filterable
+          @change="handleProviderChange"
+        >
+          <el-option
+            v-for="provider in providerModels"
+            :key="provider.providerId"
+            :label="provider.providerName"
+            :value="provider.providerId"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="选择模型" prop="modelName">
         <el-select
           v-model="selectedModel"
           placeholder="请选择模型"
           style="width: 100%"
           filterable
+          :disabled="!selectedProvider"
           @change="handleModelChange"
         >
-          <el-option-group
-            v-for="provider in providerModels"
-            :key="provider.providerId"
-            :label="provider.providerName"
+          <el-option
+            v-for="model in currentProviderModels"
+            :key="model.modelId"
+            :label="model.modelName || model.modelId"
+            :value="model.modelId"
           >
-            <el-option
-              v-for="model in provider.models"
-              :key="model.modelId"
-              :label="model.modelName || model.modelId"
-              :value="model.modelId"
-            >
-              <span>{{ model.modelName || model.modelId }}</span>
-              <span class="text-gray-400 text-12px ml-8px">{{ provider.providerName }}</span>
-            </el-option>
-          </el-option-group>
+            <span>{{ model.modelName || model.modelId }}</span>
+          </el-option>
         </el-select>
-      </el-form-item>
-      <el-form-item label="模型供应商" prop="modelProvider">
-        <el-input v-model="formData.modelProvider" placeholder="自动填充" disabled />
       </el-form-item>
       <el-form-item label="系统提示词" prop="systemPrompt">
         <el-input
@@ -130,13 +137,21 @@ const formData = ref<Agent>({
 })
 const formRules = reactive({
   name: [{ required: true, message: '智能体名称不能为空', trigger: 'blur' }],
+  modelProvider: [{ required: true, message: '请选择模型供应商', trigger: 'change' }],
   modelName: [{ required: true, message: '请选择模型', trigger: 'change' }]
 })
 const formRef = ref() // 表单 Ref
 
-/** 模型选择相关 */
+/** 模型选择相关：先选供应商，再选该供应商下的模型（两级联动） */
+const selectedProvider = ref('')
 const selectedModel = ref('')
 const providerModels = ref<Array<{ providerId: string; providerName: string; models: Array<{ modelId: string; modelName: string }> }>>([])
+
+/** 当前供应商下的模型列表 */
+const currentProviderModels = computed(() => {
+  const provider = providerModels.value.find((p) => p.providerId === selectedProvider.value)
+  return provider?.models || []
+})
 
 /** 加载可用模型列表 */
 const loadModels = async () => {
@@ -180,18 +195,20 @@ const loadSkillPool = async () => {
   }
 }
 
+/** 供应商选择变化：清空已选模型，模型下拉按新供应商过滤 */
+const handleProviderChange = (providerId: string) => {
+  selectedModel.value = ''
+  formData.value.modelName = undefined
+  formData.value.modelProvider = providerId
+}
+
 /** 模型选择变化 */
 const handleModelChange = (modelId: string) => {
   formData.value.modelName = modelId
-  // 找到对应的 provider
-  for (const provider of providerModels.value) {
-    for (const model of provider.models) {
-      if (model.modelId === modelId) {
-        formData.value.modelProvider = provider.providerId
-        return
-      }
-    }
-  }
+  // 只在当前选中的供应商内查找：modelId 可能跨供应商重名（如 deepseek-v4-flash、
+  // gpt-4o），全局查找会配错 modelProvider，导致表单所选与智能体实际配置不一致
+  const provider = providerModels.value.find((p) => p.providerId === selectedProvider.value)
+  formData.value.modelProvider = provider?.providerId || ''
 }
 
 /** 打开弹窗 */
@@ -211,6 +228,8 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       formData.value = await AgentApi.getAgent(id)
+      // 编辑回填：先回填供应商，再回填模型
+      selectedProvider.value = formData.value.modelProvider || ''
       selectedModel.value = formData.value.modelName || ''
     } finally {
       formLoading.value = false
@@ -259,6 +278,7 @@ const resetForm = () => {
     sortOrder: 0,
     initialSkills: []
   }
+  selectedProvider.value = ''
   selectedModel.value = ''
   formRef.value?.resetFields()
 }
