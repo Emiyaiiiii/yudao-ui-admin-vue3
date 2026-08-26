@@ -26,8 +26,8 @@ export const ProjectMemberApi = {
     return await request.delete({ url: `/kb/project-member/remove`, params: { kbId, userId } })
   },
 
-  // 检查当前用户是否为项目成员
-  checkMember: async (kbId: number, userId?: number) => {
-    return await request.get({ url: `/kb/project-member/check`, params: { kbId, userId } })
+  // 检查当前登录用户是否为项目成员（只需 kbId，userId 由后端取登录用户）
+  checkMember: async (kbId: number) => {
+    return await request.get({ url: `/kb/project-member/check`, params: { kbId } })
   }
 }
