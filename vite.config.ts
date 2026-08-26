@@ -35,15 +35,16 @@ export default ({command, mode}: ConfigEnv): UserConfig => {
             port: env.VITE_PORT, // 端口号
             host: "0.0.0.0",
             open: env.VITE_OPEN === 'true',
-            // 本地跨域代理. 目前注释的原因：暂时没有用途，server 端已经支持跨域
-            // proxy: {
-            //   ['/admin-api']: {
-            //     target: env.VITE_BASE_URL,
-            //     ws: false,
-            //     changeOrigin: true,
-            //     rewrite: (path) => path.replace(new RegExp(`^/admin-api`), ''),
-            //   },
-            // },
+            // 本地跨域代理：本机跑前端时，把相对 /admin-api 代理到本地后端(48080)，
+            // 去掉 /admin-api 前缀（后端根 context-path 为空）。容器环境走 nginx 反代，不影响。
+            proxy: {
+              ['/admin-api']: {
+                target: env.VITE_BASE_URL === 'http://api-dashboard.yudao.iocoder.cn' ? 'http://127.0.0.1:48080' : env.VITE_BASE_URL,
+                ws: false,
+                changeOrigin: true,
+                rewrite: (path) => path.replace(new RegExp(`^/admin-api`), ''),
+              },
+            },
         },
         // 项目使用的vite插件。 单独提取到build/vite/plugin中管理
         plugins: createVitePlugins(isBuild, env),
