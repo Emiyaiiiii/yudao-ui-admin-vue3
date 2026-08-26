@@ -10,6 +10,7 @@ export interface Category {
           sort: number; // 排序
           status: number; // 状态: 0=启用, 1=禁用
           columnConfig?: string; // 表头配置(JSON): 该分类下知识库列表的动态表头
+          isProject?: number; // 是否项目成果库分类: 0=否, 1=是
     children?: Category[];
   }
 

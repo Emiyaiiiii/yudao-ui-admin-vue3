@@ -29,6 +29,10 @@
           {{ selectedLevelName }}（{{ visibilityRuleLabel(selectedVisibilityRule) }}）
         </el-tag>
       </el-form-item>
+      <el-form-item v-if="isSelectedProjectCategory" label="项目成员">
+        <el-tag type="warning" size="large">项目成果库</el-tag>
+        <span class="project-flag-tip">将自动纳入项目成员管理，创建人会成为首个项目成员</span>
+      </el-form-item>
 
       <!-- 所有者：根据选中的层级配置动态切换 -->
       <!-- ownerDim=1（用户）→ 个人知识库，自动设为当前用户 -->
@@ -117,8 +121,13 @@
             v-model="extForm[f.key || '']"
             multiple
             filterable
-            placeholder="请选择成员"
+            remote
+            :reserve-keyword="false"
+            :remote-method="searchUsers"
+            :loading="userSearchLoading"
+            placeholder="输入姓名搜索，可多选"
             style="width: 100%"
+            @change="showSelectedUsersOnly"
           >
             <el-option v-for="u in userOptions" :key="u.id" :label="u.nickname" :value="u.id" />
           </el-select>
@@ -153,7 +162,7 @@ import { LevelConfigApi } from '@/api/kb/levelconfig'
 import { UserDeptApi } from '@/api/kb/userdept'
 import { ref, reactive, computed } from 'vue'
 import * as SystemApi from '@/api/system/dept'
-import { getSimpleUserList } from '@/api/system/user'
+import { getSimpleUserList, getSimpleUserListByNickname } from '@/api/system/user'
 import { useUserStore } from '@/store/modules/user'
 import { handleTree } from '@/utils/tree'
 import { defaultProps } from '@/utils/tree'
@@ -180,6 +189,7 @@ const formData = ref({
   docCount: undefined,
   status: 0,
   isPublic: 0,
+  isProject: 0,
   shareDeptIds: []
 })
 const formRules = reactive({
@@ -203,15 +213,127 @@ const selectedVisibilityRule = ref(0) // 当前选中层级配置的 visibilityR
 const deptTree = ref<any[]>([])
 const deptOptions = ref<any[]>([])
 const allDeptTree = ref<any[]>([]) // 完整部门树（用于自定义字段的部门选择）
+const allDeptList = ref<any[]>([]) // 扁平部门，用于院级默认所属部门
+
+const isRootDeptParent = (parentId: any) =>
+  parentId == null || parentId === 0 || parentId === '0'
+
+/** 当前用户部门链上的第二级（根是第一级「黄河勘测规划设计研究院」） */
+const findInstituteDefaultDeptId = () => {
+  const userDeptId = userStore.getUser?.deptId
+  if (userDeptId == null || userDeptId === 0) return undefined
+  const map = new Map<string, any>()
+  allDeptList.value.forEach((dept) => {
+    if (dept?.id != null) map.set(String(dept.id), dept)
+  })
+  const chain: any[] = []
+  const seen = new Set<string>()
+  let current = map.get(String(userDeptId))
+  while (current && !seen.has(String(current.id))) {
+    seen.add(String(current.id))
+    chain.push(current)
+    if (isRootDeptParent(current.parentId)) break
+    current = map.get(String(current.parentId))
+  }
+  if (chain.length < 2) return undefined
+  return chain[chain.length - 2].id
+}
+
+/** 仅院级新建：所属部门未选时，默认用户部门的第二级 */
+const applyInstituteDefaultOwner = () => {
+  if (formType.value === 'update') return
+  if (selectedOwnerDim.value !== 2 || selectedVisibilityRule.value !== 2) return
+  if (formData.value.ownerId != null && formData.value.ownerId !== '') return
+  const deptId = findInstituteDefaultDeptId()
+  if (deptId != null) {
+    formData.value.ownerId = deptId
+  }
+}
 
 // 用户列表（用于自定义字段的成员选择）
 const userOptions = ref<any[]>([])
+const selectedUserMap = ref(new Map<string, any>())
+const userSearchLoading = ref(false)
+let userSearchSeq = 0
+
+const collectSelectedMemberIds = () => {
+  const ids: string[] = []
+  customFields.value
+    .filter((f) => f.type === 'member')
+    .forEach((f) => {
+      const v = extForm.value[f.key || '']
+      if (Array.isArray(v)) ids.push(...v.map((id: any) => String(id)))
+    })
+  return ids
+}
+
+const rememberSelectedUsers = () => {
+  const selected = new Set(collectSelectedMemberIds())
+  const next = new Map<string, any>()
+  const take = (u?: any) => {
+    if (!u) return
+    const id = String(u.id)
+    if (selected.has(id)) next.set(id, { ...u, id })
+  }
+  userOptions.value.forEach(take)
+  selectedUserMap.value.forEach(take)
+  selectedUserMap.value = next
+}
+
+const showSelectedUsersOnly = () => {
+  rememberSelectedUsers()
+  userOptions.value = Array.from(selectedUserMap.value.values())
+}
+
+const searchUsers = async (query: string) => {
+  const keyword = (query || '').trim()
+  rememberSelectedUsers()
+  if (!keyword) {
+    userOptions.value = Array.from(selectedUserMap.value.values())
+    return
+  }
+  const seq = ++userSearchSeq
+  userSearchLoading.value = true
+  try {
+    const list = await getSimpleUserListByNickname(keyword)
+    if (seq !== userSearchSeq) return
+    const map = new Map(selectedUserMap.value)
+    ;(list || []).forEach((u: any) => map.set(String(u.id), { ...u, id: String(u.id) }))
+    userOptions.value = Array.from(map.values())
+  } finally {
+    if (seq === userSearchSeq) userSearchLoading.value = false
+  }
+}
 
 // 自定义字段
 const categoryCustomFieldsMap = ref<Record<number, KbColumn[]>>({}) // 分类ID → 自定义字段定义
 const categoryColumnMap = ref<Record<number, KbColumn[]>>({}) // 分类ID → 完整列定义（含内置列标题）
+const categoryMetaMap = ref<Record<number, { name?: string; parentId?: number; isProject?: number }>>({})
 const customFields = ref<KbColumn[]>([]) // 当前分类的自定义字段
 const extForm = ref<Record<string, any>>({}) // 自定义字段的表单值
+
+/** 当前所选分类是否属于院级/公司项目成果库 */
+const isSelectedProjectCategory = computed(() => isProjectCategoryById(formData.value.categoryId))
+
+const isProjectCategoryById = (categoryId?: number): boolean => {
+  if (!categoryId) return false
+  const names: string[] = []
+  let id: number | undefined = categoryId
+  const seen = new Set<number>()
+  while (id && !seen.has(id)) {
+    seen.add(id)
+    const meta = categoryMetaMap.value[id]
+    if (!meta) break
+    if (meta.isProject === 1) return true
+    names.push(meta.name || '')
+    id = meta.parentId
+  }
+  const hasOutcome = names.some((n) => n.includes('项目成果'))
+  const underOrg = names.some(
+    (n) => n.includes('院级') || n.includes('公司知识库') || (n.includes('公司') && n.includes('知识库'))
+  )
+  return hasOutcome && underOrg
+}
 
 // 当前用户
 const userStore = useUserStore()
@@ -252,8 +374,13 @@ const applyLevelConfig = (kbLevelId: number, preserveOwnerId = false) => {
     // 编辑回显时保留已加载的 ownerId，不重置
     if (!preserveOwnerId) {
       // ownerDim=1（用户）→ 个人知识库，自动设为当前用户
-      // ownerDim=2（部门）→ 清除，等待用户选择部门
-      formData.value.ownerId = (cfg.ownerDim === 1) ? currentUserId.value : undefined
+      // ownerDim=2 且院级（rule=2）→ 默认用户部门第二级；公司/共享仍留空由用户选
+      if (cfg.ownerDim === 1) {
+        formData.value.ownerId = currentUserId.value
+      } else {
+        formData.value.ownerId = undefined
+        applyInstituteDefaultOwner()
+      }
       // 非个人知识库不能公开到广场
       if (cfg.visibilityRule !== 1) {
         formData.value.isPublic = 0
@@ -304,14 +431,19 @@ const loadOptions = async () => {
   })
 
   // 完整部门树 + 用户列表（用于自定义字段）
+  allDeptList.value = deptData || []
   allDeptTree.value = handleTree(deptData)
-  userOptions.value = userData || []
+  userOptions.value = (userData || []).map((u: any) => ({ ...u, id: String(u.id) }))
 
   // 构建分类ID → 完整列定义 + 自定义字段映射（从 columnConfig 解析）
   const columnMap: Record<number, KbColumn[]> = {}
   const customMap: Record<number, KbColumn[]> = {}
+  const metaMap: Record<number, { name?: string; parentId?: number; isProject?: number }> = {}
   const collectCustom = (items: any[]) => {
     ;(items || []).forEach((item: any) => {
+      if (item.id) {
+        metaMap[item.id] = { name: item.name, parentId: item.parentId, isProject: item.isProject }
+      }
       if (item.id && item.columnConfig) {
         const cols = parseColumnConfig(item.columnConfig)
         columnMap[item.id] = cols
@@ -323,6 +455,7 @@ const loadOptions = async () => {
   collectCustom(categoryData)
   categoryColumnMap.value = columnMap
   categoryCustomFieldsMap.value = customMap
+  categoryMetaMap.value = metaMap
 
   // 超管/租户管理员 → 显示全部，不过滤
   if (isSuperAdmin.value) {
@@ -429,6 +562,7 @@ const open = async (type: string, id?: number, presetCategoryId?: number) => {
       // 回显自定义字段
       customFields.value = categoryCustomFieldsMap.value[data.categoryId] || []
       applyExtValues(data.extValues)
+      rememberSelectedUsers()
     } finally {
       formLoading.value = false
     }
@@ -447,7 +581,8 @@ const applyExtValues = (extValues?: Record<string, string>) => {
     if (raw === undefined || raw === null) return
     if (f.type === 'member') {
       try {
-        extForm.value[key] = JSON.parse(raw)
+        const parsed = JSON.parse(raw)
+        extForm.value[key] = Array.isArray(parsed) ? parsed.map((id: any) => String(id)) : []
       } catch {
         extForm.value[key] = []
       }
@@ -491,7 +626,14 @@ const submitForm = async () => {
     delete (data as any).docCount
     // 附带自定义字段值
     data.extValues = serializeExtValues()
+    data.isProject = isSelectedProjectCategory.value ? 1 : 0
+    data.memberIds = customFields.value
+      .filter((f) => f.type === 'member')
+      .flatMap((f) => (Array.isArray(extForm.value[f.key || '']) ? extForm.value[f.key || ''] : []))
+      .map((id: any) => String(id))
     if (formType.value === 'create') {
+      applyInstituteDefaultOwner()
+      data.ownerId = formData.value.ownerId
       await LibraryApi.createLibrary(data)
       message.success(t('common.createSuccess'))
     } else {
@@ -519,6 +661,7 @@ const resetForm = () => {
     docCount: undefined,
     status: 0,
     isPublic: 0,
+    isProject: 0,
     shareDeptIds: []
   }
   selectedLevelName.value = ''
@@ -534,5 +677,11 @@ const resetForm = () => {
 .custom-field-divider {
   font-size: 13px;
   color: var(--el-color-primary);
+}
+
+.project-flag-tip {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

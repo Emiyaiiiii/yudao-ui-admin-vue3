@@ -16,6 +16,7 @@ export interface Library {
   shareDeptIds?: number[] // 共享部门ID列表
   creator?: string // 创建人
   extValues?: Record<string, string> // 自定义字段值(key=字段key, value=字段值字符串)
+  memberIds?: Array<string | number> // 项目成员用户ID，仅项目成果库写入 kb_project_member
 }
 
 // 知识库 API

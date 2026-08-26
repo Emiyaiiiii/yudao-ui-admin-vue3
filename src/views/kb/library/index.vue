@@ -165,6 +165,12 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="项目库" align="center" prop="isProject" width="90px">
+        <template #default="scope">
+          <el-tag v-if="scope.row.isProject === 1" type="warning" size="small">项目库</el-tag>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
       <el-table-column
         label="创建时间"
         align="center"

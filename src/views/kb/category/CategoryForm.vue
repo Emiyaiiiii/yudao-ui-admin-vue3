@@ -8,7 +8,7 @@
       v-loading="formLoading"
     >
       <el-form-item label="分类名称" prop="name">
-        <el-input v-model="formData.name" placeholder="请输入分类名称" />
+        <el-input v-model="formData.name" placeholder="请输入分类名称" @change="maybeAutoProjectFlag" />
       </el-form-item>
       <el-form-item label="关联层级配置" prop="kbLevelId">
         <el-select v-model="formData.kbLevelId" placeholder="请选择层级配置" style="width: 100%">
@@ -28,6 +28,7 @@
           check-strictly
           default-expand-all
           placeholder="请选择父分类ID: 0=顶级分类"
+          @change="maybeAutoProjectFlag"
         />
       </el-form-item>
       <el-form-item label="排序" prop="sort">
@@ -38,6 +39,18 @@
           <el-radio :value="0">启用</el-radio>
           <el-radio :value="1">禁用</el-radio>
         </el-radio-group>
+      </el-form-item>
+      <el-form-item label="项目成果库">
+        <el-switch
+          v-model="formData.isProject"
+          :active-value="1"
+          :inactive-value="0"
+          active-text="是"
+          inactive-text="否"
+        />
+        <div class="project-flag-tip">
+          开启后，该分类下创建的知识库会自动纳入「项目成员管理」，并按项目成员控制文档访问。院级/公司下的「项目成果」分类会自动打开。
+        </div>
       </el-form-item>
 
       <!-- ========== 表头配置（自定义表头 / 列模板） ========== -->
@@ -158,7 +171,8 @@ const formData = ref({
   parentId: undefined,
   sort: undefined,
   status: undefined,
-  columnConfig: undefined
+  columnConfig: undefined,
+  isProject: 0
 })
 const formRules = reactive({
   name: [{ required: true, message: '分类名称不能为空', trigger: 'blur' }]
@@ -166,6 +180,7 @@ const formRules = reactive({
 const formRef = ref() // 表单 Ref
 const categoryTree = ref() // 树形结构
 const levelConfigOptions = ref<any[]>([])
+const categoryMetaMap = ref<Record<number, { name?: string; parentId?: number; isProject?: number }>>({})
 
 // 表头配置（列模板）
 const columnList = ref<KbColumn[]>([])
@@ -194,9 +209,10 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       const data = await CategoryApi.getCategory(id)
-      formData.value = data
+      formData.value = { ...data, isProject: data.isProject ?? 0 }
       // 解析已有的表头配置
       columnList.value = parseColumnConfig(data.columnConfig)
+      maybeAutoProjectFlag()
     } finally {
       formLoading.value = false
     }
@@ -281,16 +297,51 @@ const resetForm = () => {
     parentId: undefined,
     sort: undefined,
     status: undefined,
-    columnConfig: undefined
+    columnConfig: undefined,
+    isProject: 0
   }
   columnList.value = parseColumnConfig(null)
   formRef.value?.resetFields()
+}
+
+/** 院级/公司下的「项目成果」分类自动打开项目库开关 */
+const maybeAutoProjectFlag = () => {
+  if (formData.value.isProject === 1) return
+  const name = formData.value.name || ''
+  const names: string[] = [name]
+  let parentId = formData.value.parentId as number | undefined
+  const seen = new Set<number>()
+  while (parentId && parentId !== 0 && !seen.has(parentId)) {
+    seen.add(parentId)
+    const meta = categoryMetaMap.value[parentId]
+    if (!meta) break
+    if (meta.isProject === 1) {
+      formData.value.isProject = 1
+      return
+    }
+    names.push(meta.name || '')
+    parentId = meta.parentId
+  }
+  const hasOutcome = names.some((n) => n.includes('项目成果'))
+  const underOrg = names.some(
+    (n) => n.includes('院级') || n.includes('公司知识库') || (n.includes('公司') && n.includes('知识库'))
+  )
+  if (hasOutcome && underOrg) {
+    formData.value.isProject = 1
+  }
 }
 
 /** 获得知识库分类树 */
 const getCategoryTree = async () => {
   categoryTree.value = []
   const data = await CategoryApi.getCategoryList(undefined)
+  const meta: Record<number, { name?: string; parentId?: number; isProject?: number }> = {}
+  ;(data || []).forEach((item: any) => {
+    if (item?.id) {
+      meta[item.id] = { name: item.name, parentId: item.parentId, isProject: item.isProject }
+    }
+  })
+  categoryMetaMap.value = meta
   const root: Tree = { id: 0, name: '顶级知识库分类', children: [] }
   root.children = handleTree(data, 'id', 'parentId')
   categoryTree.value.push(root)
@@ -357,6 +408,13 @@ const getCategoryTree = async () => {
 .column-config-tip {
   margin-top: 8px;
   font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.project-flag-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--el-text-color-secondary);
 }
 </style>
