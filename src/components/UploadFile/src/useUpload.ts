@@ -51,7 +51,13 @@ export const useUpload = (directory?: string) => {
       // 模式二：后端上传
       // 重写 el-upload httpRequest 文件上传成功会走成功的钩子，失败走失败的钩子
       return new Promise((resolve, reject) => {
-        FileApi.updateFile({ file: options.file, directory }, uploadProgressHandler)
+        // 必须构造 FormData，否则 axios 会把 File 序列化成 {"uid":...} 的 JSON，导致后端收到空的 multipart 参数
+        const formData = new FormData()
+        formData.append('file', options.file)
+        if (directory) {
+          formData.append('directory', directory)
+        }
+        FileApi.updateFile(formData, uploadProgressHandler)
           .then((res) => {
             if (res.code === 0) {
               resolve(res)

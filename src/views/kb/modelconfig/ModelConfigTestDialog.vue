@@ -72,7 +72,6 @@
         <div class="p-12px rounded-lg text-12px" style="background: #f6f8fa; line-height: 1.6;">
           <div>名称: {{ testResult.modelInfo.name }}</div>
           <div>UID: {{ testResult.modelInfo.uid }}</div>
-          <div>部署类型: {{ testResult.modelInfo.deploy }}</div>
           <div>API地址: {{ testResult.modelInfo.url }}</div>
         </div>
       </div>

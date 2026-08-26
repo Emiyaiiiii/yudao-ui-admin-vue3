@@ -8,6 +8,7 @@ export interface Provider {
   chatModel?: string
   baseUrl?: string
   configured?: boolean
+  requireApiKey?: boolean
   isCustom?: boolean
   isLocal?: boolean
   supportModelDiscovery?: boolean

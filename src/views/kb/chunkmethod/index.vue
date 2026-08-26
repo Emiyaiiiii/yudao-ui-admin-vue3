@@ -45,7 +45,11 @@
           </el-select>
         </el-col>
         <el-col :span="9" class="flex justify-end gap-10px">
-          <el-button type="primary" @click="openForm('create')" v-hasPermi="['kb:chunk-method:create']">
+          <el-button
+            type="primary"
+            @click="openForm('create')"
+            v-hasPermi="['kb:chunk-method:create']"
+          >
             <Icon icon="ep:plus" class="mr-5px" /> 新建方法
           </el-button>
         </el-col>
@@ -96,7 +100,9 @@
               <Icon icon="ep:video-play" :size="14" />
             </el-button>
             <el-dropdown @command="(cmd: string) => handleCardCommand(cmd, method)" trigger="click">
-              <span @click.stop><Icon icon="ep:more-filled" :size="14" class="card-menu-icon" /></span>
+              <span @click.stop
+                ><Icon icon="ep:more-filled" :size="14" class="card-menu-icon"
+              /></span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="view">查看详情</el-dropdown-item>
@@ -123,13 +129,15 @@
             {{ truncateText(method.description || '暂无描述', 80) }}
           </div>
           <div class="method-perf">
-            <div class="perf-item">
-              <Icon icon="ep:odometer" :size="14" />
-              <span class="perf-text">{{ formatSpeed(method.avgProcessingSpeed) }}</span>
+            <div class="perf-item" title="单块大小">
+              <Icon icon="ep:magic-stick" :size="14" />
+              <span class="perf-label">单块</span>
+              <span class="perf-text">{{ getCoreParam(method, 'chunk_size', '1000') }} 字符</span>
             </div>
-            <div class="perf-item">
-              <Icon icon="ep:cpu" :size="14" />
-              <span class="perf-text">{{ formatMemory(method.memoryFootprint) }}</span>
+            <div class="perf-item" title="块间重叠">
+              <Icon icon="ep:recycle" :size="14" />
+              <span class="perf-label">重叠</span>
+              <span class="perf-text">{{ getCoreParam(method, 'chunk_overlap', '200') }} 字符</span>
             </div>
           </div>
         </div>
@@ -217,16 +225,13 @@ const viewDialogRef = ref()
 const testDialogRef = ref()
 const testResultDialogRef = ref()
 
-// 方法类型选项
+// 方法类型选项（仅保留 python-vector 端 ChunkerFactory 真实支持的策略）
 const methodTypeOptions = [
   { label: '固定大小', value: 'fixed_size' },
-  { label: '语义分段', value: 'semantic' },
-  { label: '层次分段', value: 'hierarchical' },
-  { label: '递归分割', value: 'recursive' },
   { label: '按句子', value: 'sentence' },
   { label: '按段落', value: 'paragraph' },
-  { label: '按章节', value: 'section' },
-  { label: '自定义', value: 'custom' }
+  { label: '递归分割', value: 'recursive' },
+  { label: '语义分段', value: 'semantic' }
 ]
 
 // 加载列表
@@ -321,11 +326,11 @@ const toggleStatus = async (method: ChunkMethod) => {
 // 设为默认
 const setDefault = async (method: ChunkMethod) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要将 "${method.name}" 设置为默认切片方法吗？`,
-      '确认',
-      { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
-    )
+    await ElMessageBox.confirm(`确定要将 "${method.name}" 设置为默认切片方法吗？`, '确认', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    })
     await ChunkMethodApi.setDefault(method.id)
     message.success('已设置为默认方法')
     loadMethods()
@@ -357,15 +362,19 @@ const handleCardClick = (method: ChunkMethod) => {
 
 // ================== 辅助函数 ==================
 const methodTypeDisplayMap: Record<string, string> = {
-  fixed_size: '固定大小', semantic: '语义分段', hierarchical: '层次分段',
-  recursive: '递归分割', sentence: '按句子', paragraph: '按段落',
-  section: '按章节', custom: '自定义'
+  fixed_size: '固定大小',
+  sentence: '按句子',
+  paragraph: '按段落',
+  recursive: '递归分割',
+  semantic: '语义分段'
 }
 
 const methodTypeTagMap: Record<string, string> = {
-  fixed_size: '', semantic: 'success', hierarchical: 'warning',
-  recursive: 'primary', sentence: 'info', paragraph: 'danger',
-  section: '', custom: ''
+  fixed_size: '',
+  sentence: 'info',
+  paragraph: 'danger',
+  recursive: 'primary',
+  semantic: 'success'
 }
 
 const getMethodTypeDisplay = (type?: string) => methodTypeDisplayMap[type || ''] || type || '-'
@@ -376,14 +385,19 @@ const truncateText = (text: string, length: number) => {
   return text.length <= length ? text : text.substring(0, length) + '...'
 }
 
-const formatSpeed = (speed?: number) => {
-  if (speed === undefined || speed === null) return '-'
-  return `${speed.toFixed(1)} 千字/秒`
-}
-
-const formatMemory = (memory?: number) => {
-  if (memory === undefined || memory === null) return '-'
-  return `${memory} MB`
+// 从 defaultParameters JSON 中解析核心切片参数（用于卡片展示），解析失败时返回缺省值
+const getCoreParam = (method: ChunkMethod, key: string, fallback: string) => {
+  if (!method.defaultParameters) return fallback
+  try {
+    const params =
+      typeof method.defaultParameters === 'string'
+        ? JSON.parse(method.defaultParameters)
+        : method.defaultParameters
+    const val = params?.[key]
+    return val === null || val === undefined ? fallback : String(val)
+  } catch {
+    return fallback
+  }
 }
 
 const formatDate = (date?: string | number) => {
@@ -421,12 +435,14 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 卡片基类 ========== */
 .chunk-card {
-  background: #fff;
+  background: var(--el-bg-color-overlay);
   border-radius: 16px;
   padding: 16px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
-  border: 1px solid #eef2f6;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -448,9 +464,13 @@ const formatDate = (date?: string | number) => {
 
   &:hover {
     transform: translateY(-4px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-    border-color: #d0ddf0;
-    &::after { opacity: 1; }
+    box-shadow:
+      0 8px 25px rgba(0, 0, 0, 0.08),
+      0 2px 8px rgba(0, 0, 0, 0.04);
+    border-color: var(--el-border-color);
+    &::after {
+      opacity: 1;
+    }
   }
 
   &:active {
@@ -461,15 +481,15 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 创建卡片 ========== */
 .create-card {
-  background: #fafbfd;
-  border: 2px dashed #e1e8f0;
+  background: var(--el-fill-color-lighter);
+  border: 2px dashed var(--el-border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 16px rgba(64, 158, 255, 0.1);
@@ -486,7 +506,11 @@ const formatDate = (date?: string | number) => {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ecf5ff, #d9ecff);
+    background: linear-gradient(
+      135deg,
+      var(--el-color-primary-light-9),
+      var(--el-color-primary-light-8)
+    );
     display: flex;
     align-items: center;
     justify-content: center;
@@ -499,7 +523,7 @@ const formatDate = (date?: string | number) => {
   }
   .create-subtext {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--el-text-color-placeholder);
   }
 }
 
@@ -541,10 +565,13 @@ const formatDate = (date?: string | number) => {
     .card-menu-icon {
       opacity: 0.6;
       transition: opacity 0.3s ease;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
       cursor: pointer;
       padding: 2px;
-      &:hover { color: var(--el-color-primary); opacity: 1; }
+      &:hover {
+        color: var(--el-color-primary);
+        opacity: 1;
+      }
     }
   }
 }
@@ -558,7 +585,7 @@ const formatDate = (date?: string | number) => {
   .method-name {
     font-size: 15px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--el-text-color-primary);
     margin-bottom: 4px;
     line-height: 1.4;
     overflow: hidden;
@@ -567,7 +594,7 @@ const formatDate = (date?: string | number) => {
   }
   .method-code {
     font-size: 11px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     margin-bottom: 8px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -576,7 +603,7 @@ const formatDate = (date?: string | number) => {
   }
   .method-description {
     font-size: 11px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     line-height: 1.4;
     margin-bottom: 10px;
     overflow: hidden;
@@ -590,17 +617,20 @@ const formatDate = (date?: string | number) => {
     gap: 16px;
     margin-top: 8px;
     padding: 8px 10px;
-    background: #f8fafc;
+    background: var(--el-fill-color-light);
     border-radius: 6px;
     .perf-item {
       display: flex;
       align-items: center;
       gap: 4px;
       font-size: 11px;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
+      .perf-label {
+        color: var(--el-text-color-placeholder);
+      }
       .perf-text {
         font-weight: 500;
-        color: #1f2937;
+        color: var(--el-text-color-primary);
       }
     }
   }
@@ -608,7 +638,7 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 卡片底部 ========== */
 .card-footer {
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--el-border-color-lighter);
   padding-top: 10px;
   margin-top: auto;
 
@@ -620,9 +650,12 @@ const formatDate = (date?: string | number) => {
       display: flex;
       align-items: center;
       gap: 4px;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
       font-size: 11px;
-      .stat-text { font-size: 11px; font-weight: 500; }
+      .stat-text {
+        font-size: 11px;
+        font-weight: 500;
+      }
     }
   }
 }

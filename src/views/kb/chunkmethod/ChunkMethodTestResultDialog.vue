@@ -25,7 +25,7 @@
       <el-divider>分片预览</el-divider>
 
       <div
-        v-for="(chunk, index) in (resultData.chunksPreview || [])"
+        v-for="(chunk, index) in resultData.chunksPreview || []"
         :key="index"
         class="chunk-preview"
       >
@@ -67,20 +67,20 @@ defineExpose({ open })
 <style scoped>
 .test-result .chunk-preview {
   margin-bottom: 20px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   overflow: hidden;
 }
 .chunk-preview .chunk-header {
   padding: 10px 15px;
-  background-color: #f5f7fa;
-  border-bottom: 1px solid #ebeef5;
+  background-color: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 .chunk-preview .chunk-header .size {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .chunk-preview .chunk-content {
@@ -97,7 +97,7 @@ defineExpose({ open })
   color: #909399;
   font-size: 14px;
   padding: 10px;
-  background-color: #f5f7fa;
+  background-color: var(--el-fill-color-light);
   border-radius: 4px;
   margin-top: 10px;
 }

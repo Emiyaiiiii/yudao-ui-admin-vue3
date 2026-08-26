@@ -23,11 +23,11 @@
       <el-descriptions-item label="处理器类">
         {{ viewData.handlerClass || '-' }}
       </el-descriptions-item>
-      <el-descriptions-item label="处理速度">
-        {{ viewData.avgProcessingSpeed ? `${viewData.avgProcessingSpeed} 千字/秒` : '-' }}
+      <el-descriptions-item label="单块大小">
+        {{ getCoreParam(viewData, 'chunk_size', '1000') }} 字符
       </el-descriptions-item>
-      <el-descriptions-item label="内存占用">
-        {{ viewData.memoryFootprint ? `${viewData.memoryFootprint} MB` : '-' }}
+      <el-descriptions-item label="块间重叠">
+        {{ getCoreParam(viewData, 'chunk_overlap', '200') }} 字符
       </el-descriptions-item>
       <el-descriptions-item label="创建时间">
         {{ formatDateDisplay(viewData.createTime) }}
@@ -57,12 +57,14 @@ defineOptions({ name: 'ChunkMethodViewDialog' })
 const dialogVisible = ref(false)
 const methodData = ref<ChunkMethod | null>(null)
 
-const viewData = computed(() => methodData.value || {} as ChunkMethod)
+const viewData = computed(() => methodData.value || ({} as ChunkMethod))
 
 const methodTypeDisplayMap: Record<string, string> = {
-  fixed_size: '固定大小', semantic: '语义分段', hierarchical: '层次分段',
-  recursive: '递归分割', sentence: '按句子', paragraph: '按段落',
-  section: '按章节', custom: '自定义'
+  fixed_size: '固定大小',
+  sentence: '按句子',
+  paragraph: '按段落',
+  recursive: '递归分割',
+  semantic: '语义分段'
 }
 
 const getMethodTypeDisplay = (type?: string) => methodTypeDisplayMap[type || ''] || type || '-'
@@ -73,6 +75,21 @@ const formatDateDisplay = (val?: string | number) => {
     return new Date(val).toISOString().substring(0, 10)
   }
   return String(val).substring(0, 10) || '-'
+}
+
+// 从 defaultParameters 中解析核心切片参数，缺省时返回兜底值
+const getCoreParam = (row: ChunkMethod, key: string, fallback: string) => {
+  if (!row.defaultParameters) return fallback
+  try {
+    const params =
+      typeof row.defaultParameters === 'string'
+        ? JSON.parse(row.defaultParameters)
+        : row.defaultParameters
+    const val = params?.[key]
+    return val === null || val === undefined ? fallback : String(val)
+  } catch {
+    return fallback
+  }
 }
 
 const formatJson = (data?: string) => {
@@ -96,7 +113,7 @@ defineExpose({ open })
 .json-preview {
   margin: 0;
   padding: 8px;
-  background-color: #f6f8fa;
+  background-color: var(--el-fill-color-light);
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;

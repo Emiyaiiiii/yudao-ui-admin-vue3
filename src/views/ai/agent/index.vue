@@ -23,6 +23,9 @@
         <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['ai-agent:agent:create']">
           <Icon icon="ep:plus" class="mr-5px" /> 新增
         </el-button>
+        <el-button plain @click="handleBootstrapDefaults" v-hasPermi="['ai-agent:agent:create']">
+          <Icon icon="ep:magic-stick" class="mr-5px" /> 批量补默认智能体
+        </el-button>
       </el-form-item>
     </el-form>
   </ContentWrap>
@@ -30,7 +33,12 @@
   <!-- 列表 -->
   <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
-      <el-table-column label="名称" align="center" prop="name" min-width="140px" />
+      <el-table-column label="名称" align="center" min-width="180px">
+        <template #default="scope">
+          <span>{{ scope.row.name }}</span>
+          <el-tag v-if="scope.row.isDefault === 1" size="small" type="danger" class="ml-8px">默认</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="头像" align="center" width="70px">
         <template #default="scope">
           <el-avatar :size="36" :src="scope.row.avatar">
@@ -59,9 +67,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="运行状态" align="center" width="100px">
+      <el-table-column label="运行状态" align="center" width="110px">
         <template #default="scope">
           <el-tag v-if="scope.row.status !== 1" size="small" type="info">已停用</el-tag>
+          <el-tag v-else-if="scope.row._deleted" size="small" type="danger">QwenPaw 已删除</el-tag>
           <el-tag v-else :type="scope.row._running ? 'success' : 'info'" size="small">
             {{ scope.row._running ? '运行中' : '未运行' }}
           </el-tag>
@@ -75,6 +84,15 @@
           </el-button>
           <el-button link type="primary" @click="handleToggle(scope.row)" v-hasPermi="['ai-agent:agent:update']">
             {{ scope.row.status === 1 ? '停用' : '启用' }}
+          </el-button>
+          <el-button
+            v-if="scope.row.isDefault !== 1"
+            link
+            type="warning"
+            @click="handleSetDefault(scope.row.id)"
+            v-hasPermi="['ai-agent:agent:update']"
+          >
+            设为默认
           </el-button>
           <el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['ai-agent:agent:delete']">
             删除
@@ -133,7 +151,7 @@ const getList = async () => {
   }
 }
 
-/** 并行加载各智能体运行状态（失败兜底为未运行） */
+/** 并行加载各智能体运行状态（失败兜底为未运行；QwenPaw 侧已删除则标记 _deleted） */
 const loadRunningStatus = async (agents: Agent[]) => {
   const tasks = agents.map(async (agent) => {
     if (agent.status !== 1) {
@@ -142,6 +160,11 @@ const loadRunningStatus = async (agents: Agent[]) => {
     }
     try {
       const status = await AgentRemoteApi.getStatus(agent.id)
+      if (status?.status === 'deleted') {
+        agent._deleted = true
+        agent._running = false
+        return
+      }
       agent._running = !!(status?.running ?? false)
     } catch {
       agent._running = false
@@ -179,6 +202,34 @@ const handleToggle = async (row: Agent) => {
   await AgentApi.toggleAgent(row.id)
   message.success('操作成功')
   await getList()
+}
+
+/** 设为默认操作 */
+const handleSetDefault = async (id: number) => {
+  try {
+    await message.confirm('确定将该智能体设为默认智能体吗？')
+    await AgentApi.setDefaultAgent(id)
+    message.success('设置成功')
+    await getList()
+  } catch {}
+}
+
+/** 批量补默认智能体（超管/租户管理员按钮触发） */
+const handleBootstrapDefaults = async () => {
+  try {
+    await message.confirm(
+      '将为当前租户下「还没有任何智能体」的启用用户各创建一个默认智能体。\n若启用用户较多（如员工导入），会逐个创建、耗时较长，且大量创建会占用 QwenPaw 目录，请确认后执行。'
+    )
+    const result: Record<string, string> = await AgentApi.bootstrapDefaultAgents()
+    const counts = { success: 0, failed: 0, skipped: 0, promoted: 0 }
+    Object.values(result).forEach((v) => {
+      counts[v] = (counts[v] ?? 0) + 1
+    })
+    message.success(
+      `完成：新增 ${counts.success} 个，提升 ${counts.promoted} 个，跳过 ${counts.skipped} 个，失败 ${counts.failed} 个`
+    )
+    await getList()
+  } catch {}
 }
 
 /** 删除按钮操作 */

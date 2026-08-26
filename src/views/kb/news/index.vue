@@ -449,10 +449,10 @@ import { getSimpleDeptList } from '@/api/system/dept'
 // ========== 统计 ==========
 const stats = ref<Partial<NewsStats>>({})
 const statCards = [
-  { key: 'total', label: '总记录', icon: 'ep:document', color: '#409eff', bg: '#ecf5ff' },
-  { key: 'completed', label: '已完成', icon: 'ep:check', color: '#67c23a', bg: '#f0f9eb' },
-  { key: 'pending', label: '待处理', icon: 'ep:timer', color: '#e6a23c', bg: '#fdf6ec' },
-  { key: 'failed', label: '失败', icon: 'ep:warning', color: '#f56c6c', bg: '#fef0f0' },
+  { key: 'total', label: '总记录', icon: 'ep:document', color: 'var(--el-color-primary)', bg: 'var(--el-color-primary-light-9)' },
+  { key: 'completed', label: '已完成', icon: 'ep:check', color: 'var(--el-color-success)', bg: 'var(--el-color-success-light-9)' },
+  { key: 'pending', label: '待处理', icon: 'ep:timer', color: 'var(--el-color-warning)', bg: 'var(--el-color-warning-light-9)' },
+  { key: 'failed', label: '失败', icon: 'ep:warning', color: 'var(--el-color-danger)', bg: 'var(--el-color-danger-light-9)' },
 ]
 
 async function loadStats() {
@@ -737,7 +737,7 @@ onMounted(() => {
   display: flex;
   gap: 16px;
   margin-bottom: 16px;
-  background: #fff;
+  background: var(--el-bg-color-overlay);
   padding: 16px 20px;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
@@ -767,13 +767,13 @@ onMounted(() => {
       .stat-value {
         font-size: 22px;
         font-weight: 700;
-        color: #303133;
+        color: var(--el-text-color-primary);
         line-height: 1.2;
       }
 
       .stat-label {
         font-size: 12px;
-        color: #909399;
+        color: var(--el-text-color-secondary);
       }
     }
   }
@@ -813,7 +813,7 @@ onMounted(() => {
   max-height: 300px;
   overflow-y: auto;
   padding: 8px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.6;

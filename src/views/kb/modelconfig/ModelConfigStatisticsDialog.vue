@@ -33,9 +33,9 @@
         <el-col :span="6">
           <el-card shadow="hover">
             <div class="stat-card-inner">
-              <div class="stat-label text-13px" style="color: #6b7280;">部署类型</div>
-              <div class="stat-value text-28px fw-700 mt-4px" style="color: #1f2937;">{{ deployTypeCount }}</div>
-              <div class="stat-desc text-11px mt-4px" style="color: #9ca3af;">支持的部署方式</div>
+              <div class="stat-label text-13px" style="color: #6b7280;">模型类型</div>
+              <div class="stat-value text-28px fw-700 mt-4px" style="color: #1f2937;">{{ modelTypeCount }}</div>
+              <div class="stat-desc text-11px mt-4px" style="color: #9ca3af;">覆盖的模型用途分类</div>
             </div>
           </el-card>
         </el-col>
@@ -53,13 +53,6 @@
         <el-table-column prop="name" label="模型名称" width="140">
           <template #default="{ row }">
             <span>{{ row.name }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="部署类型" width="110">
-          <template #default="{ row }">
-            <el-tag :type="getDeployTagType(row.deploy)" size="small">
-              {{ getDeployDisplay(row.deploy) }}
-            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="70">
@@ -113,43 +106,11 @@ const dialogVisible = ref(false)
 const loading = ref(false)
 const statistics = ref<ModelConfigStatistics | null>(null)
 
-const deployTypeCount = computed(() => {
+const modelTypeCount = computed(() => {
   if (!statistics.value?.statistics) return 0
-  const deploys = new Set(statistics.value.statistics.map((item) => item.deploy))
-  return deploys.size
+  const types = new Set((statistics.value.statistics as any[]).map((item) => item.modelType))
+  return types.size
 })
-
-const deployDisplayMap: Record<string, string> = {
-  doubao: '豆包',
-  bailian: '百炼',
-  lite: 'LiteLLM',
-  openai: 'OpenAI',
-  api: '通用API',
-  xinf: 'Xinference',
-  vllm: 'VLLM',
-  zhipu: '智谱AI',
-  other: '其他'
-}
-
-const deployTagTypeMap: Record<string, string> = {
-  doubao: 'warning',
-  bailian: 'danger',
-  openai: 'success',
-  lite: 'success',
-  api: 'info',
-  zhipu: 'primary',
-  vllm: '',
-  xinf: '',
-  other: ''
-}
-
-const getDeployDisplay = (deploy: string) => {
-  return deployDisplayMap[deploy] || deploy
-}
-
-const getDeployTagType = (deploy: string) => {
-  return deployTagTypeMap[deploy] || ''
-}
 
 const formatDateDisplay = (val?: string | number) => {
   if (!val) return '-'

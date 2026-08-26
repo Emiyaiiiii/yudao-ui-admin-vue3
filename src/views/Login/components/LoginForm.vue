@@ -267,7 +267,10 @@ const handleLogin = async (params: any) => {
     }
     // 判断是否为SSO登录
     if (redirect.value.indexOf('sso') !== -1) {
-      window.location.href = window.location.href.replace('/login?redirect=', '')
+      // redirect.value 是已解码一次的 /sso 地址（redirect_uri 内保持单次 % 编码）。
+      // 用地址栏原始 URL 做字符串替换会保留 encodeURIComponent 后的双转义，
+      // 导致 redirect_uri=http%25... 而授权报错，故直接用它跳转。
+      window.location.href = redirect.value
     } else {
       await push({ path: redirect.value || permissionStore.addRouters[0].path })
     }

@@ -12,8 +12,6 @@ export interface ChunkMethod {
   handlerClass?: string
   isActive?: number
   isDefaultMethod?: number
-  avgProcessingSpeed?: number
-  memoryFootprint?: number
   createTime?: string | number
   updateTime?: string | number
 }

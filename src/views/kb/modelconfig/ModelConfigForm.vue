@@ -19,27 +19,14 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="API地址" prop="url">
-        <el-input v-model="formData.url" placeholder="https://api.example.com/v1/chat/completions" />
-      </el-form-item>
-      <el-form-item label="API密钥" prop="appkey">
-        <el-input
-          v-model="formData.appkey"
-          type="password"
-          show-password
-          placeholder="请输入API密钥"
-        />
-      </el-form-item>
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="部署类型" prop="deploy">
-            <el-select v-model="formData.deploy" placeholder="请选择部署类型" class="w-full">
-              <el-option
-                v-for="item in deployOptions"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
+          <el-form-item label="用途分类" prop="modelType">
+            <el-select v-model="formData.modelType" placeholder="请选择用途分类" class="w-full">
+              <el-option label="大模型(LLM)" value="llm" />
+              <el-option label="嵌入/向量(Embedding)" value="embedding" />
+              <el-option label="OCR/多模态" value="ocr" />
+              <el-option label="重排(Rerank)" value="rerank" />
             </el-select>
           </el-form-item>
         </el-col>
@@ -55,6 +42,20 @@
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item label="具体模型名" prop="model">
+        <el-input v-model="formData.model" placeholder="如 text-embedding-v4 / deepseek-chat / DeepSeek-OCR-2" />
+      </el-form-item>
+      <el-form-item label="API地址" prop="url">
+        <el-input v-model="formData.url" placeholder="https://api.example.com/v1/chat/completions" />
+      </el-form-item>
+      <el-form-item label="API密钥" prop="appkey">
+        <el-input
+          v-model="formData.appkey"
+          type="password"
+          show-password
+          placeholder="请输入API密钥"
+        />
+      </el-form-item>
       <el-row :gutter="20">
         <el-col :span="12">
           <el-form-item label="排序顺序">
@@ -73,13 +74,6 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="支持平台">
-        <el-select v-model="formData.platform" placeholder="请选择支持平台" class="w-full">
-          <el-option label="Web端" value="web" />
-          <el-option label="App端" value="app" />
-          <el-option label="两者都支持" value="both" />
-        </el-select>
-      </el-form-item>
       <el-form-item label="模型描述">
         <el-input
           v-model="formData.description"
@@ -145,20 +139,25 @@
           :inactive-value="0"
         />
       </el-form-item>
-      <el-form-item label="元数据(JSON)">
-        <el-input
-          v-model="formData.metadataStr"
-          type="textarea"
-          placeholder='{"provider": "openai", "version": "2.0"}'
-          :rows="2"
+      <el-form-item v-if="formData.modelType === 'ocr'" label="OCR通道" prop="ocrKind">
+        <el-select v-model="formData.ocrKind" placeholder="请选择 OCR 通道" class="w-full">
+          <el-option label="MinerU 整篇版式解析" value="mineru" />
+          <el-option label="DeepSeek 逐图OCR" value="deepseek_ocr" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-else label="支持多模态(VL)">
+        <el-switch
+          v-model="formData.vlSupportedBool"
+          active-text="是"
+          inactive-text="否"
         />
       </el-form-item>
       <el-form-item label="配置参数(JSON)">
         <el-input
           v-model="formData.configStr"
           type="textarea"
-          placeholder='{"stream": true}'
-          :rows="2"
+          placeholder='{"provider": "openai", "stream": true}'
+          :rows="3"
         />
       </el-form-item>
     </el-form>
@@ -194,22 +193,23 @@ const dialogTitle = computed(() => {
 const defaultFormData = () => ({
   id: undefined as number | undefined,
   uid: '',
+  model: '',
+  modelType: 'llm',
   name: '',
   url: '',
   appkey: '',
-  deploy: 'doubao',
   thinkingEnabledBool: 0,
+  vlSupportedBool: false,
+  ocrKind: 'deepseek_ocr',
   isActiveBool: 1,
   description: '',
   maxTokens: 4096,
   contextLength: 8192,
   temperature: 0.7,
   topP: 0.9,
-  metadataStr: '{}',
   configStr: '{}',
   sortOrder: 0,
-  isPinnedBool: 0,
-  platform: 'both'
+  isPinnedBool: 0
 })
 
 const formData = reactive(defaultFormData())
@@ -231,22 +231,10 @@ const formRules = reactive({
     { required: true, message: '请输入API密钥', trigger: 'blur' },
     { min: 10, message: 'API密钥长度至少为10个字符', trigger: 'blur' }
   ],
-  deploy: [
-    { required: true, message: '请选择部署类型', trigger: 'change' }
+  modelType: [
+    { required: true, message: '请选择用途分类', trigger: 'change' }
   ]
 })
-
-const deployOptions = [
-  { label: '豆包', value: 'doubao' },
-  { label: '百炼', value: 'bailian' },
-  { label: 'LiteLLM', value: 'lite' },
-  { label: 'OpenAI', value: 'openai' },
-  { label: '通用API', value: 'api' },
-  { label: 'Xinference', value: 'xinf' },
-  { label: 'VLLM', value: 'vllm' },
-  { label: '智谱AI', value: 'zhipu' },
-  { label: '其他', value: 'other' }
-]
 
 const emit = defineEmits(['success'])
 
@@ -264,25 +252,34 @@ const open = async (type: 'create' | 'update', row?: ModelConfig) => {
     try {
       const res = await ModelConfigApi.get(row.id)
       const data = res
+      // OCR 通道从 config JSON 的 ocr_kind 读取，缺省 deepseek_ocr
+      let ocrKind = 'deepseek_ocr'
+      try {
+        const cfgObj = JSON.parse(data.config || '{}')
+        if (cfgObj.ocr_kind) ocrKind = String(cfgObj.ocr_kind)
+      } catch (e) {
+        // 忽略解析失败，沿用默认值
+      }
       Object.assign(formData, {
         id: data.id,
         uid: data.uid,
+        model: data.model || '',
+        modelType: data.modelType || 'llm',
         name: data.name,
         url: data.url,
         appkey: data.appkey,
-        deploy: data.deploy,
         thinkingEnabledBool: data.thinkingEnabled || 0,
+        vlSupportedBool: !!data.vlSupported,
+        ocrKind,
         isActiveBool: data.isActive || 0,
         description: data.description || '',
         maxTokens: data.maxTokens || 4096,
         contextLength: data.contextLength || 8192,
         temperature: data.temperature || 0.7,
         topP: data.topP || 0.9,
-        metadataStr: data.metadata || '{}',
         configStr: data.config || '{}',
         sortOrder: data.sortOrder || 0,
-        isPinnedBool: data.isPinned || 0,
-        platform: data.platform || 'both'
+        isPinnedBool: data.isPinned || 0
       })
     } finally {
       formLoading.value = false
@@ -298,24 +295,36 @@ const submitForm = async () => {
 
   formLoading.value = true
   try {
+    // OCR 通道写入 config JSON 的 ocr_kind（后端 resolveOcrKind 从 config 读取）
+    let configObj: any = {}
+    try {
+      configObj = JSON.parse(formData.configStr || '{}')
+    } catch (e) {
+      configObj = {}
+    }
+    if (formData.modelType === 'ocr') {
+      configObj.ocr_kind = formData.ocrKind
+    } else if ('ocr_kind' in configObj) {
+      delete configObj.ocr_kind
+    }
     const params: any = {
       uid: formData.uid,
+      model: formData.model,
+      modelType: formData.modelType,
       name: formData.name,
       url: formData.url,
       appkey: formData.appkey,
-      deploy: formData.deploy,
       thinkingEnabled: formData.thinkingEnabledBool,
+      vlSupported: formData.vlSupportedBool,
       isActive: formData.isActiveBool,
       description: formData.description,
       maxTokens: formData.maxTokens,
       contextLength: formData.contextLength,
       temperature: formData.temperature,
       topP: formData.topP,
-      metadata: formData.metadataStr || '{}',
-      config: formData.configStr || '{}',
+      config: JSON.stringify(configObj) || '{}',
       sortOrder: formData.sortOrder || 0,
-      isPinned: formData.isPinnedBool,
-      platform: formData.platform || 'both'
+      isPinned: formData.isPinnedBool
     }
     if (formType.value === 'create') {
       await ModelConfigApi.create(params)

@@ -16,23 +16,21 @@
             </template>
           </el-input>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="6">
           <el-select
-            v-model="deployFilter"
-            placeholder="部署类型"
+            v-model="modelTypeFilter"
+            placeholder="用途分类"
             clearable
             @change="handleFilterChange"
             class="w-full"
           >
-            <el-option
-              v-for="item in deployOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
+            <el-option label="大模型(LLM)" value="llm" />
+            <el-option label="嵌入/向量(Embedding)" value="embedding" />
+            <el-option label="OCR/多模态" value="ocr" />
+            <el-option label="重排(Rerank)" value="rerank" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="6">
           <el-select
             v-model="statusFilter"
             placeholder="状态"
@@ -44,7 +42,7 @@
             <el-option label="停用" :value="0" />
           </el-select>
         </el-col>
-        <el-col :span="10" class="flex justify-end gap-10px">
+        <el-col :span="6" class="flex justify-end gap-10px">
           <el-button type="primary" @click="openForm('create')" v-hasPermi="['kb:model-config:create']">
             <Icon icon="ep:plus" class="mr-5px" /> 创建配置
           </el-button>
@@ -78,17 +76,8 @@
         <!-- 卡片顶部 -->
         <div class="card-header">
           <div class="model-deploy">
-            <el-tag :type="getDeployTagType(config.deploy)" size="small" class="text-10px">
-              {{ getDeployDisplay(config.deploy) }}
-            </el-tag>
-            <el-tag
-              v-if="config.platform !== 'both'"
-              size="small"
-              type="info"
-              effect="plain"
-              class="ml-4px text-10px"
-            >
-              {{ getPlatformDisplay(config.platform) }}
+            <el-tag type="primary" size="small" effect="plain" class="text-10px">
+              {{ getModelTypeDisplay(config.modelType) }}
             </el-tag>
             <Icon
               v-if="config.isPinned"
@@ -167,6 +156,14 @@
                 :color="config.thinkingEnabled ? '#67c23a' : '#909399'"
               />
             </div>
+            <div class="param-item" v-if="config.modelType !== 'ocr'">
+              <span class="param-label">多模态:</span>
+              <Icon
+                :icon="config.vlSupported ? 'ep:check' : 'ep:close'"
+                :size="14"
+                :color="config.vlSupported ? '#67c23a' : '#909399'"
+              />
+            </div>
           </div>
         </div>
 
@@ -229,7 +226,7 @@ const message = useMessage()
 
 // 搜索和过滤
 const searchQuery = ref('')
-const deployFilter = ref('')
+const modelTypeFilter = ref('')
 const statusFilter = ref<number | undefined>(undefined)
 
 // 分页
@@ -249,19 +246,6 @@ const testDialogRef = ref()
 const copyDialogRef = ref()
 const statisticsDialogRef = ref()
 
-// 部署选项
-const deployOptions = [
-  { label: '豆包', value: 'doubao' },
-  { label: '百炼', value: 'bailian' },
-  { label: 'LiteLLM', value: 'lite' },
-  { label: 'OpenAI', value: 'openai' },
-  { label: '通用API', value: 'api' },
-  { label: 'Xinference', value: 'xinf' },
-  { label: 'VLLM', value: 'vllm' },
-  { label: '智谱AI', value: 'zhipu' },
-  { label: '其他', value: 'other' }
-]
-
 // 加载列表
 const loadModelConfigs = async () => {
   loading.value = true
@@ -270,7 +254,7 @@ const loadModelConfigs = async () => {
       pageNo: queryParams.pageNo,
       pageSize: queryParams.pageSize,
       search: searchQuery.value || undefined,
-      deploy: deployFilter.value || undefined,
+      modelType: modelTypeFilter.value || undefined,
       isActive: statusFilter.value !== undefined ? statusFilter.value : undefined
     }
     const data = await ModelConfigApi.getPage(params)
@@ -406,24 +390,12 @@ const handleCardClick = (config: ModelConfig) => {
 }
 
 // ================== 辅助函数 ==================
-const deployDisplayMap: Record<string, string> = {
-  doubao: '豆包', bailian: '百炼', lite: 'LiteLLM', openai: 'OpenAI',
-  api: '通用API', xinf: 'Xinference', vllm: 'VLLM', zhipu: '智谱AI', other: '其他'
+const modelTypeDisplayMap: Record<string, string> = {
+  llm: '大模型', embedding: '嵌入/向量', ocr: 'OCR/多模态', rerank: '重排'
 }
 
-const deployTagTypeMap: Record<string, string> = {
-  doubao: 'warning', bailian: 'danger', openai: 'success', lite: 'success',
-  api: 'info', zhipu: 'primary', vllm: '', xinf: '', other: ''
-}
-
-const getDeployDisplay = (deploy?: string) => deployDisplayMap[deploy || ''] || deploy || '-'
-const getDeployTagType = (deploy?: string) => deployTagTypeMap[deploy || ''] || ''
-
-const getPlatformDisplay = (platform?: string) => {
-  if (platform === 'web') return 'Web端'
-  if (platform === 'app') return 'App端'
-  return platform || ''
-}
+const getModelTypeDisplay = (modelType?: string) =>
+  modelTypeDisplayMap[modelType || ''] || modelType || '-'
 
 const truncateText = (text: string, length: number) => {
   if (!text) return ''
@@ -471,12 +443,12 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 卡片基类 ========== */
 .model-card {
-  background: #fff;
+  background: var(--el-bg-color-overlay);
   border-radius: 16px;
   padding: 16px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
-  border: 1px solid #eef2f6;
+  border: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -499,7 +471,7 @@ const formatDate = (date?: string | number) => {
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-    border-color: #d0ddf0;
+    border-color: var(--el-border-color);
     &::after { opacity: 1; }
   }
 
@@ -511,15 +483,15 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 创建卡片 ========== */
 .create-card {
-  background: #fafbfd;
-  border: 2px dashed #e1e8f0;
+  background: var(--el-fill-color-extra-light);
+  border: 2px dashed var(--el-border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 16px rgba(64, 158, 255, 0.1);
@@ -536,7 +508,7 @@ const formatDate = (date?: string | number) => {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ecf5ff, #d9ecff);
+    background: var(--el-color-primary-light-9);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -549,7 +521,7 @@ const formatDate = (date?: string | number) => {
   }
   .create-subtext {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--el-text-color-placeholder);
   }
 }
 
@@ -591,7 +563,7 @@ const formatDate = (date?: string | number) => {
     .card-menu-icon {
       opacity: 0.6;
       transition: opacity 0.3s ease;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
       cursor: pointer;
       padding: 2px;
       &:hover { color: var(--el-color-primary); opacity: 1; }
@@ -608,7 +580,7 @@ const formatDate = (date?: string | number) => {
   .model-name {
     font-size: 15px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--el-text-color-primary);
     margin-bottom: 4px;
     line-height: 1.4;
     overflow: hidden;
@@ -617,7 +589,7 @@ const formatDate = (date?: string | number) => {
   }
   .model-uid {
     font-size: 11px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     margin-bottom: 8px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -625,7 +597,7 @@ const formatDate = (date?: string | number) => {
   }
   .model-description {
     font-size: 11px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     line-height: 1.4;
     margin-bottom: 10px;
     overflow: hidden;
@@ -639,10 +611,10 @@ const formatDate = (date?: string | number) => {
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     margin-bottom: 8px;
     padding: 6px 8px;
-    background: #f8fafc;
+    background: var(--el-fill-color-light);
     border-radius: 6px;
     .url-text {
       overflow: hidden;
@@ -660,16 +632,16 @@ const formatDate = (date?: string | number) => {
       align-items: center;
       gap: 4px;
       font-size: 11px;
-      color: #6b7280;
-      .param-label { color: #9ca3af; }
-      .param-value { font-weight: 500; color: #1f2937; }
+      color: var(--el-text-color-secondary);
+      .param-label { color: var(--el-text-color-placeholder); }
+      .param-value { font-weight: 500; color: var(--el-text-color-primary); }
     }
   }
 }
 
 /* ========== 卡片底部 ========== */
 .card-footer {
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--el-border-color-lighter);
   padding-top: 10px;
   margin-top: auto;
 
@@ -681,7 +653,7 @@ const formatDate = (date?: string | number) => {
       display: flex;
       align-items: center;
       gap: 4px;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
       font-size: 11px;
       .stat-text { font-size: 11px; font-weight: 500; }
     }

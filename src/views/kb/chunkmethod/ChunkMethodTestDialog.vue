@@ -55,9 +55,8 @@ const testForm = reactive({
 const emit = defineEmits(['testSuccess'])
 
 const methodTypeDisplayMap: Record<string, string> = {
-  fixed_size: '固定大小', semantic: '语义分段', hierarchical: '层次分段',
-  recursive: '递归分割', sentence: '按句子', paragraph: '按段落',
-  section: '按章节', custom: '自定义'
+  fixed_size: '固定大小', sentence: '按句子', paragraph: '按段落',
+  recursive: '递归分割', semantic: '语义分段'
 }
 
 const getMethodTypeDisplay = (type?: string) => methodTypeDisplayMap[type || ''] || type || '-'

@@ -1,5 +1,5 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { getRefreshToken } from '@/utils/auth'
+import { getAccessToken } from '@/utils/auth'
 import type { VectorTaskWsMessage } from '@/api/kb/vectorTask'
 
 /**
@@ -30,19 +30,26 @@ let refCount = 0 // 引用计数，最后一个组件卸载时才断开连接
 
 /** 构建 WebSocket URL */
 function buildWsUrl(): string {
-  const baseUrl = import.meta.env.VITE_BASE_URL || import.meta.env.VITE_API_URL || ''
-  const wsBase = baseUrl.replace('http', 'ws')
-  return `${wsBase}/infra/ws`
+  // 芋道内置 WebSocket 端点固定为 /infra/ws，且不走 /admin-api 前缀（该前缀仅用于 HTTP REST 反代）。
+  // 直接基于当前页面协议 + host 拼接，避免错误的 /admin-api/infra/ws。
+  // 参考:src/views/im/home/store/websocketStore.ts 的 buildWsUrl 实现。
+  const baseUrl = import.meta.env.VITE_BASE_URL as string | undefined
+  if (baseUrl && baseUrl.length > 0) {
+    return baseUrl.replace(/^http/, 'ws')
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  return `${protocol}//${host}`
 }
 
 /** 连接 WebSocket */
 function connect() {
   if (ws.value && ws.value.readyState === WebSocket.OPEN) return
 
-  const token = getRefreshToken()
+  const token = getAccessToken()
   if (!token) return
 
-  const url = `${buildWsUrl()}?token=${token}`
+  const url = `${buildWsUrl()}/infra/ws?token=${token}`
   const socket = new WebSocket(url)
 
   socket.onopen = () => {

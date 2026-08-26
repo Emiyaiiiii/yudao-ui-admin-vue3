@@ -4,22 +4,22 @@ import request from '@/config/axios'
 export interface ModelConfig {
   id: number // 主键ID
   uid: string // 模型唯一标识
+  model?: string // 具体模型名
+  modelType?: string // 用途分类: embedding/llm/ocr/rerank
   name: string // 模型名称
   url: string // API地址
   appkey: string // API密钥
-  deploy: string // 部署类型
   thinkingEnabled?: number // 是否启用思考能力: 0=否, 1=是
+  vlSupported?: boolean // 是否支持多模态(VL): 0=否, 1=是
   isActive?: number // 是否激活: 0=停用, 1=激活
   description?: string // 模型描述
   maxTokens?: number // 最大Token数
   contextLength?: number // 上下文长度
   temperature?: number // 温度参数
   topP?: number // Top-P参数
-  metadata?: string // 元数据(JSON格式)
-  config?: string // 配置参数(JSON格式)
+  config?: string // 配置参数(JSON格式，含元数据)
   sortOrder?: number // 排序顺序
   isPinned?: number // 是否置顶
-  platform?: string // 支持平台
   activatedAt?: string | number // 激活时间（yudao 默认序列化为时间戳数字）
   createTime?: string | number // 创建时间（yudao 默认序列化为时间戳数字）
 }
@@ -44,7 +44,6 @@ export interface ModelConfigTestResult {
   modelInfo: {
     name: string
     uid: string
-    deploy: string
     url: string
     maxTokens: number
     temperature: number
@@ -75,7 +74,7 @@ export interface ModelConfigStatistics {
   statistics: Array<{
     configId: number
     name: string
-    deploy: string
+    modelType: string
     isActive: number
     usageCount: number
     totalSessions: number

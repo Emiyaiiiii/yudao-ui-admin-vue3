@@ -662,12 +662,12 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 卡片基类 ========== */
 .rag-card {
-  background: #fff;
+  background: var(--el-bg-color-overlay);
   border-radius: 16px;
   padding: 16px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
-  border: 1px solid #eef2f6;
+  border: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -676,10 +676,10 @@ const formatDate = (date?: string | number) => {
 
   &.inactive {
     opacity: 0.7;
-    background-color: #fafbfc;
+    background-color: var(--el-fill-color-light);
 
     .config-key {
-      color: #909399;
+      color: var(--el-text-color-placeholder);
     }
   }
 
@@ -698,15 +698,15 @@ const formatDate = (date?: string | number) => {
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-    border-color: #d0ddf0;
+    border-color: var(--el-border-color);
     &::after { opacity: 1; }
   }
 }
 
 /* ========== 创建卡片 ========== */
 .create-card {
-  background: #fafbfd;
-  border: 2px dashed #e1e8f0;
+  background: var(--el-fill-color-extra-light);
+  border: 2px dashed var(--el-border-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -714,7 +714,7 @@ const formatDate = (date?: string | number) => {
   cursor: pointer;
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 16px rgba(64, 158, 255, 0.1);
@@ -731,7 +731,7 @@ const formatDate = (date?: string | number) => {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ecf5ff, #d9ecff);
+    background: var(--el-color-primary-light-9);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -744,7 +744,7 @@ const formatDate = (date?: string | number) => {
   }
   .create-subtext {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--el-text-color-placeholder);
   }
 }
 
@@ -765,7 +765,7 @@ const formatDate = (date?: string | number) => {
     .config-key {
       font-weight: 600;
       font-size: 14px;
-      color: #1f2937;
+      color: var(--el-text-color-primary);
       max-width: 180px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -797,7 +797,7 @@ const formatDate = (date?: string | number) => {
     .card-menu-icon {
       opacity: 0.6;
       transition: opacity 0.3s ease;
-      color: #6b7280;
+      color: var(--el-text-color-secondary);
       cursor: pointer;
       padding: 2px;
       &:hover { color: var(--el-color-primary); opacity: 1; }
@@ -817,12 +817,12 @@ const formatDate = (date?: string | number) => {
       color: #6b7280;
     }
     .value-content {
-      color: #1f2937;
+      color: var(--el-text-color-primary);
       font-weight: 500;
       word-break: break-word;
       .json-preview {
         display: inline-block;
-        background: #f5f7fa;
+        background: var(--el-fill-color-light);
         padding: 4px 8px;
         border-radius: 6px;
         font-family: monospace;
@@ -836,7 +836,7 @@ const formatDate = (date?: string | number) => {
   }
   .description {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     line-height: 1.4;
     overflow: hidden;
     display: -webkit-box;
@@ -848,13 +848,13 @@ const formatDate = (date?: string | number) => {
 
 /* ========== 卡片底部 ========== */
 .card-footer {
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--el-border-color-lighter);
   padding-top: 10px;
   margin-top: auto;
 
   .update-time {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--el-text-color-placeholder);
   }
 }
 
