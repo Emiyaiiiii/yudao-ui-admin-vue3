@@ -43,6 +43,9 @@
           </el-select>
         </el-col>
         <el-col :span="6" class="flex justify-end gap-10px">
+          <el-button @click="showMatrix = !showMatrix">
+            <Icon icon="ep:promotion" class="mr-5px" /> 图片方案
+          </el-button>
           <el-button type="primary" @click="openForm('create')" v-hasPermi="['kb:model-config:create']">
             <Icon icon="ep:plus" class="mr-5px" /> 创建配置
           </el-button>
@@ -52,6 +55,9 @@
         </el-col>
       </el-row>
     </ContentWrap>
+
+    <!-- 图片处理方案就绪矩阵 -->
+    <ImageStrategyMatrix v-show="showMatrix" ref="matrixRef" @configure="openFormByType" />
 
     <!-- 模型配置卡片展示区 -->
     <div class="model-cards-section">
@@ -219,6 +225,7 @@ import ModelConfigForm from './ModelConfigForm.vue'
 import ModelConfigTestDialog from './ModelConfigTestDialog.vue'
 import ModelConfigCopyDialog from './ModelConfigCopyDialog.vue'
 import ModelConfigStatisticsDialog from './ModelConfigStatisticsDialog.vue'
+import ImageStrategyMatrix from './ImageStrategyMatrix.vue'
 
 defineOptions({ name: 'KbModelConfig' })
 
@@ -245,6 +252,8 @@ const formRef = ref()
 const testDialogRef = ref()
 const copyDialogRef = ref()
 const statisticsDialogRef = ref()
+const matrixRef = ref()
+const showMatrix = ref(true)
 
 // 加载列表
 const loadModelConfigs = async () => {
@@ -266,6 +275,8 @@ const loadModelConfigs = async () => {
   } finally {
     loading.value = false
   }
+  // 同步刷新能力级别就绪矩阵（激活状态/模型变化后保持一致）
+  matrixRef.value?.refresh()
 }
 
 // 初始化
@@ -286,8 +297,19 @@ const handleFilterChange = () => {
 }
 
 // 打开创建/编辑弹窗
-const openForm = (type: 'create' | 'update', row?: ModelConfig) => {
-  formRef.value.open(type, row)
+const openForm = (type: 'create' | 'update', row?: ModelConfig, initModelType?: string) => {
+  formRef.value.open(type, row, initModelType)
+}
+
+// 从图片处理方案就绪矩阵「去配置/去开启VL」：带 activeId 时编辑该配置（如开启 VL），否则按用途分类新建
+const openFormByType = (modelType: string, activeId?: number) => {
+  if (activeId) {
+    ModelConfigApi.get(activeId).then((row) => {
+      openForm('update', row)
+    })
+    return
+  }
+  openForm('create', undefined, modelType)
 }
 
 // 测试连接

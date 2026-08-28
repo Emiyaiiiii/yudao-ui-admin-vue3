@@ -243,10 +243,14 @@ const resetForm = () => {
   formRef.value?.resetFields()
 }
 
-const open = async (type: 'create' | 'update', row?: ModelConfig) => {
+const open = async (type: 'create' | 'update', row?: ModelConfig, initModelType?: string) => {
   dialogVisible.value = true
   formType.value = type
   resetForm()
+  // 支持从能力级别就绪矩阵「去配置」预选用途分类
+  if (type === 'create' && initModelType) {
+    formData.modelType = initModelType
+  }
   if (type === 'update' && row) {
     formLoading.value = true
     try {

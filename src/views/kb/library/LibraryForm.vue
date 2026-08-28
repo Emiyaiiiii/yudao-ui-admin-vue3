@@ -39,7 +39,7 @@
       <el-form-item v-if="selectedOwnerDim === 1" label="所有者">
         <el-tag type="primary" size="large">{{ currentUserNickname }}</el-tag>
       </el-form-item>
-      <el-form-item v-else-if="selectedOwnerDim === 2" label="所属部门" prop="ownerId">
+      <el-form-item v-if="selectedOwnerDim === 2" label="所属部门" prop="ownerId">
         <el-tree-select
           v-model="formData.ownerId"
           :data="deptTree"
@@ -49,6 +49,15 @@
           placeholder="请选择所属部门"
           style="width: 100%"
         />
+      </el-form-item>
+
+      <el-form-item label="图片处理方案" prop="imageStrategy">
+        <el-select v-model="formData.imageStrategy" placeholder="请选择图片处理方案" clearable style="width: 100%">
+          <el-option label="纯文本（图片只回显URL）" value="none" />
+          <el-option label="OCR文字（提取图片文字入库）" value="ocr" />
+          <el-option label="VL总结（大模型看图生成总结）" value="vl_summary" />
+          <el-option label="视觉召回（多模态嵌入图片像素）" value="vision" />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="封面图片" prop="coverUrl">
@@ -190,6 +199,7 @@ const formData = ref({
   status: 0,
   isPublic: 0,
   isProject: 0,
+  imageStrategy: '',
   shareDeptIds: []
 })
 const formRules = reactive({
@@ -662,6 +672,7 @@ const resetForm = () => {
     status: 0,
     isPublic: 0,
     isProject: 0,
+    imageStrategy: '',
     shareDeptIds: []
   }
   selectedLevelName.value = ''
