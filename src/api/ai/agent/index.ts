@@ -11,6 +11,8 @@ export interface Agent {
   modelName: string
   systemPrompt?: string
   enableKbTool?: boolean
+  /** 工具审批级别: strict=所有工具需审批, auto=智能, off=免审批 */
+  approvalLevel?: string
   status?: number
   sortOrder?: number
   /** 是否为默认智能体: 1=是, null=否 */

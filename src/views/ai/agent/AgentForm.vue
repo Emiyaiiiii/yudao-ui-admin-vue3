@@ -68,6 +68,13 @@
         <el-switch v-model="formData.enableKbTool" :active-value="true" :inactive-value="false" />
         <span class="ml-8px text-gray-400 text-12px">开启后智能体可通过 kb 工具检索知识库</span>
       </el-form-item>
+      <el-form-item label="工具审批策略" prop="approvalLevel">
+        <el-select v-model="formData.approvalLevel" placeholder="请选择审批策略" style="width: 100%">
+          <el-option label="严格（所有工具需审批）" value="strict"></el-option>
+          <el-option label="智能（高风险才审）" value="auto"></el-option>
+          <el-option label="免审批（工具直接执行）" value="off"></el-option>
+        </el-select>
+      </el-form-item>
       <el-form-item v-if="formType === 'create'" label="初始技能" prop="initialSkills">
         <el-select
           v-model="formData.initialSkills"
@@ -131,6 +138,7 @@ const formData = ref<Agent>({
   modelName: undefined,
   systemPrompt: undefined,
   enableKbTool: false,
+  approvalLevel: 'auto',
   status: 1,
   sortOrder: 0,
   initialSkills: []
@@ -274,6 +282,7 @@ const resetForm = () => {
     modelName: undefined,
     systemPrompt: undefined,
     enableKbTool: false,
+    approvalLevel: 'auto',
     status: 1,
     sortOrder: 0,
     initialSkills: []

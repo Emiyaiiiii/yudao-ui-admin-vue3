@@ -27,6 +27,17 @@ export interface TokenUsage {
   contextUsageRatio: number
 }
 
+/** 待审批（Pending Approval）条目，透传 QwenPaw /api/approval/list */
+export interface ApprovalItem {
+  request_id: string
+  tool_name: string
+  session_id: string
+  severity: string
+  created_at?: string
+  timeout_seconds?: number
+  [key: string]: any
+}
+
 /** SSE 流式对话选项 */
 export interface SendMessageStreamOptions {
   /** 增量文本回调（每条 text delta 触发一次） */
@@ -182,7 +193,9 @@ export const ChatSessionApi = {
     sessionId: string | undefined,
     message: string,
     options: SendMessageStreamOptions,
-    attachments?: ChatAttachment[]
+    attachments?: ChatAttachment[],
+    kbIds?: number[],
+    approvalOff?: boolean
   ): Promise<void> => {
     const headers = buildAuthHeaders()
     const params: Record<string, string> = { agentId: String(agentId), message }
@@ -200,6 +213,14 @@ export const ChatSessionApi = {
         { type: 'text', text: message },
         ...buildAttachmentContentItems(attachments)
       ]
+    }
+    // 知识库检索范围：用户勾选的 kbIds（Java 拼进当轮消息前缀，供 LLM 填检索范围）
+    if (kbIds && kbIds.length) {
+      payload.kbIds = kbIds
+    }
+    // 会话级免审批：用户在审批框选"本次会话不再审批"后置 true，Java 透传 approval_level=off
+    if (approvalOff) {
+      payload.approvalOff = true
     }
     const resp = await fetch(url, {
       method: 'POST',
@@ -299,6 +320,28 @@ export const ChatSessionApi = {
       '&path=' +
       encodeURIComponent(path)
     )
+  },
+  // ==================== 工具审批（透传 QwenPaw） ====================
+  /** 查询会话下待审批的工具调用 */
+  listApprovals: async (sessionId: string) => {
+    return await request.get<{ data: ApprovalItem[] }>({
+      url: '/ai-agent/agent/approval/list',
+      params: { sessionId }
+    })
+  },
+  /** 允许某个待审批的工具调用 */
+  approveApproval: async (requestId: string, sessionId: string, scope?: string) => {
+    return await request.post<{ data: Record<string, any> }>({
+      url: '/ai-agent/agent/approval/approve',
+      data: { requestId, sessionId, scope }
+    })
+  },
+  /** 拒绝某个待审批的工具调用 */
+  denyApproval: async (requestId: string, sessionId: string, reason?: string) => {
+    return await request.post<{ data: Record<string, any> }>({
+      url: '/ai-agent/agent/approval/deny',
+      data: { requestId, sessionId, reason }
+    })
   }
 }
 

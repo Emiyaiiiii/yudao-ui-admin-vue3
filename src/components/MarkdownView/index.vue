@@ -176,6 +176,16 @@ onMounted(async () => {
     margin-bottom: 3px;
   }
 
+  /* 图片：约束大小避免撑破气泡/布局，圆角展示 */
+  img {
+    max-width: 100%;
+    max-height: 480px;
+    border-radius: 8px;
+    margin: 4px 0;
+    cursor: pointer;
+    object-fit: contain;
+  }
+
   /* 标题通用格式 */
   h1,
   h2,

@@ -37,6 +37,23 @@
           />
         </el-option-group>
       </el-select>
+      <!-- 知识库检索范围（按分类树多选，不选=全库） -->
+      <el-tree-select
+        v-if="agentId"
+        v-model="selectedKbIds"
+        placeholder="选择检索知识库（不选=全库）"
+        class="!w-280px"
+        clearable
+        multiple
+        collapse-tags
+        filterable
+        show-checkbox
+        check-strictly
+        :data="categoryTree"
+        node-key="value"
+        :props="{ label: 'name', children: 'children' }"
+        :render-after-expand="false"
+      />
       <el-input
         v-model="search"
         placeholder="搜索会话标题"
@@ -286,11 +303,60 @@
       </div>
     </div>
   </ContentWrap>
+
+  <!-- 工具调用审批弹框：流进行中轮询到待审批请求时弹出 -->
+  <el-dialog
+    :model-value="approvalVisible"
+    :show-close="false"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    width="520px"
+    append-to-body
+    title="工具调用审批"
+    class="approval-dialog"
+  >
+    <div v-if="currentApproval">
+      <div class="approval-tool">
+        <el-tag type="warning">工具</el-tag>
+        <span class="approval-tool-name">{{ currentApproval.tool_name }}</span>
+      </div>
+      <div class="approval-meta">
+        <span>级别：{{ severityText(currentApproval.severity) }}</span>
+        <span v-if="currentApproval.created_at">发起时间：{{ formatDate(currentApproval.created_at) }}</span>
+      </div>
+      <div class="approval-hint">
+        智能体请求调用上述工具，请确认是否允许。审批超时后将视为拒绝。
+      </div>
+    </div>
+    <template #footer>
+      <div class="approval-footer">
+        <el-button
+          type="warning"
+          plain
+          :loading="approvalSubmitting"
+          @click="handleApprovalOff"
+        >本次会话不再审批</el-button>
+        <el-button
+          type="danger"
+          :loading="approvalSubmitting"
+          @click="handleDenyApproval"
+        >拒 绝</el-button>
+        <el-button
+          type="primary"
+          :loading="approvalSubmitting"
+          @click="handleApproveApproval"
+        >允 许</el-button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { formatDate } from '@/utils/formatTime'
 import { AgentApi, Agent } from '@/api/ai/agent'
+import { LibraryApi, Library } from '@/api/kb/library'
+import { CategoryApi, Category } from '@/api/kb/category'
+import { handleTree } from '@/utils/tree'
 import {
   ChatSessionApi,
   QwenPawChat,
@@ -298,6 +364,7 @@ import {
   ChatAttachment,
   ToolCall,
   TokenUsage,
+  ApprovalItem,
   normalizeQwenPawMessage
 } from '@/api/ai/chatsession'
 import MarkdownView from '@/components/MarkdownView/index.vue'
@@ -324,6 +391,48 @@ const message = useMessage() // 消息弹窗
 const agents = ref<Agent[]>([]) // 我的智能体列表
 const agentId = ref<number>() // 当前选中的智能体（业务规范：必须先选）
 
+// ============ 知识库检索范围 ============
+const selectedKbIds = ref<number[]>([]) // 用户本轮勾选的知识库
+const categoryTree = ref<any[]>([]) // 分类树（节点为分类，叶子为知识库）
+
+/** 组装"分类树 + 知识库叶子"的检索选项树 */
+const buildKbTree = (categories: Category[], libraries: Library[]) => {
+  const tree = handleTree(categories, 'id', 'parentId') as any[]
+  const libsByCat = new Map<number, Library[]>()
+  libraries.forEach((l) => {
+    const cid = l.categoryId ?? 0
+    if (!libsByCat.has(cid)) libsByCat.set(cid, [])
+    libsByCat.get(cid)!.push(l)
+  })
+  const toNode = (cat: any): any => ({
+    value: 'cat_' + cat.id,
+    name: cat.name,
+    disabled: false,
+    disableCheckbox: true,
+    children: [
+      ...(cat.children || []).map(toNode),
+      ...(libsByCat.get(cat.id) || []).map((l) => ({ value: l.id, name: l.name }))
+    ]
+  })
+  const roots = tree.map(toNode)
+  // 未分类 / 分类不在当前可见树中的库，统一归到"未分类"
+  const catIds = new Set<number>(tree.map((c) => c.id))
+  const orphans = libraries.filter((l) => {
+    const cid = l.categoryId ?? 0
+    return cid === 0 || !catIds.has(cid)
+  })
+  if (orphans.length) {
+    roots.push({
+      value: 'cat_uncat',
+      name: '未分类',
+      disabled: false,
+      disableCheckbox: true,
+      children: orphans.map((l) => ({ value: l.id, name: l.name }))
+    })
+  }
+  return roots
+}
+
 /** 获得我的智能体 */
 const loadAgents = async () => {
   agents.value = await AgentApi.getMyAgents()
@@ -333,14 +442,25 @@ const loadAgents = async () => {
 const handleAgentChange = () => {
   // 停掉旧 SSE
   abortController.value?.abort()
+  stopApprovalPolling()
+  resetApprovalState()
   currentChatId.value = undefined
   currentChat.value = undefined
   messages.value = []
   draftSessionId.value = undefined
   search.value = ''
   pendingAttachments.value = []
+  selectedKbIds.value = []
   loadChats()
   loadModels()
+  // 拉取分类树 + 可用知识库，组装层级检索选项
+  Promise.all([
+    CategoryApi.listCategoriesForUser().catch(() => []),
+    LibraryApi.getSimpleLibraryList().catch(() => [])
+  ]).then(([cats, libs]) => {
+    const list: Library[] = Array.isArray(libs) ? libs : []
+    categoryTree.value = buildKbTree(Array.isArray(cats) ? cats : [], list)
+  })
 }
 
 // ============ 模型切换（scope=agent，持久化到 QwenPaw） ============
@@ -527,6 +647,134 @@ const sending = ref(false)
 const abortController = ref<AbortController>()
 const draftSessionId = ref<string>() // 草稿态会话 sessionId（发首条消息时透传，用于定位新建会话）
 
+// ============ 工具审批（弹框 + 轮询） ============
+const approvalVisible = ref(false) // 审批弹框是否展示
+const approvalQueue = ref<ApprovalItem[]>([]) // 待审批队列（按顺序逐个弹）
+const currentApproval = computed(() => approvalQueue.value[0])
+const approvalSubmitting = ref(false) // 允许/拒绝请求进行中
+const sessionApprovalOff = ref(false) // 会话级免审批（选"本次会话不再审批"后置 true）
+let approvalTimer: number | undefined // 轮询定时器句柄
+
+/** 审批级别文案 */
+const severityText = (severity?: string) => {
+  const map: Record<string, string> = {
+    high: '高风险',
+    medium: '中风险',
+    low: '低风险',
+    info: '提示'
+  }
+  return (severity && map[severity]) || severity || '普通'
+}
+
+/** 当前会话的 root session_id（与对话时透传给 QwenPaw 的会话标识一致） */
+const currentSessionId = (): string | undefined => {
+  if (draftSessionId.value) return draftSessionId.value
+  return currentChat.value?.session_id
+}
+
+/** 重置审批状态（切换会话 / 切换智能体时调用，避免串会话） */
+const resetApprovalState = () => {
+  sessionApprovalOff.value = false
+  approvalQueue.value = []
+  approvalVisible.value = false
+}
+
+/** 开启审批轮询（发送开始时调用，循环拉待审批请求） */
+const startApprovalPolling = () => {
+  stopApprovalPolling()
+  approvalTimer = window.setInterval(async () => {
+    const sid = currentSessionId()
+    if (!sid) return
+    try {
+      const resp: any = await ChatSessionApi.listApprovals(sid)
+      const list: ApprovalItem[] = Array.isArray(resp) ? resp : resp?.data || []
+      if (!list.length) return
+      // 本会话已开启免审批：请求体是发送时带过去的，当前这条流已无法回溯改参，
+      // 这里自动放行一切待审批（含残余和本轮新出现的），避免阻塞正在生成的流。
+      if (sessionApprovalOff.value) {
+        await Promise.all(
+          list.map((a) =>
+            ChatSessionApi.approveApproval(a.request_id, sid, 'similar').catch(() => {})
+          )
+        )
+        return
+      }
+      // 常规模式：新请求追加进队列（去重），弹框尚未关闭时保持展示
+      const known = new Set(approvalQueue.value.map((a) => a.request_id))
+      const fresh = list.filter((a) => !known.has(a.request_id))
+      if (fresh.length) {
+        approvalQueue.value.push(...fresh)
+        approvalVisible.value = true
+      }
+    } catch {
+      // 轮询失败静默忽略（QwenPaw 可能短暂不可用）
+    }
+  }, 1500)
+}
+
+/** 停止审批轮询（发送结束 / 切换会话时调用） */
+const stopApprovalPolling = () => {
+  if (approvalTimer) {
+    window.clearInterval(approvalTimer)
+    approvalTimer = undefined
+  }
+}
+
+/** 允许当前待审批请求（scope 可选 similar 表示同类后续自动放行） */
+const handleApproveApproval = async () => {
+  const item = currentApproval.value
+  const sid = currentSessionId()
+  if (!item || !sid || approvalSubmitting.value) return
+  approvalSubmitting.value = true
+  try {
+    await ChatSessionApi.approveApproval(item.request_id, sid, 'similar')
+    approvalQueue.value.shift()
+    approvalVisible.value = approvalQueue.value.length > 0
+  } catch {
+    // 失败保留在队列，等待重试
+  } finally {
+    approvalSubmitting.value = false
+  }
+}
+
+/** 拒绝当前待审批请求 */
+const handleDenyApproval = async () => {
+  const item = currentApproval.value
+  const sid = currentSessionId()
+  if (!item || !sid || approvalSubmitting.value) return
+  approvalSubmitting.value = true
+  try {
+    await ChatSessionApi.denyApproval(item.request_id, sid)
+    approvalQueue.value.shift()
+    approvalVisible.value = approvalQueue.value.length > 0
+  } catch {
+    // 失败保留在队列
+  } finally {
+    approvalSubmitting.value = false
+  }
+}
+
+/** 本次会话不再审批：放行当前所有待审批，并置会话级免审批标志（后续工具调用直接执行、不再弹框） */
+const handleApprovalOff = async () => {
+  const sid = currentSessionId()
+  if (!sid || approvalSubmitting.value) return
+  approvalSubmitting.value = true
+  // 放行当前已拉到的所有待审批请求（含同时触发第二个工具），解除当前流的阻塞；
+  // 若放行后本轮又出现新的待审批，轮询分支会自动继续放行。
+  const ids = approvalQueue.value.map((a) => a.request_id)
+  try {
+    await Promise.all(
+      ids.map((rid) => ChatSessionApi.approveApproval(rid, sid, 'similar').catch(() => {}))
+    )
+  } finally {
+    approvalSubmitting.value = false
+  }
+  sessionApprovalOff.value = true
+  approvalQueue.value = []
+  approvalVisible.value = false
+  message.info('本会话已启用免审批，后续工具调用不再弹框')
+}
+
 /** 生成 UUID（优先浏览器原生，兜底简易 v4） */
 const uuid = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -543,6 +791,8 @@ const uuid = (): string => {
 const handleSelectChat = async (chat: QwenPawChat) => {
   if (currentChatId.value === chat.id) return
   abortController.value?.abort()
+  stopApprovalPolling()
+  resetApprovalState()
   draftSessionId.value = undefined
   currentChatId.value = chat.id
   currentChat.value = chat
@@ -619,6 +869,7 @@ const attachReconnectStream = async () => {
   const toolCallMap = new Map<string, ToolCall>()
   sending.value = true
   abortController.value = new AbortController()
+  startApprovalPolling()
   try {
     await ChatSessionApi.reconnectStream(agentId.value, currentChatId.value, currentChat.value?.session_id || '', {
       signal: abortController.value.signal,
@@ -675,6 +926,7 @@ const attachReconnectStream = async () => {
     }
   } finally {
     sending.value = false
+    stopApprovalPolling()
     abortController.value = undefined
     await scrollToBottom()
   }
@@ -772,6 +1024,8 @@ const handleSend = async () => {
   pendingAttachments.value = []
   sending.value = true
   await scrollToBottom()
+  // 每次发送开始：若本会话仍处审批模式则开启轮询，等 QwenPaw 下发待审批请求
+  startApprovalPolling()
   // 追加空的助手消息占位
   messages.value.push({
     id: '',
@@ -851,7 +1105,9 @@ const handleSend = async () => {
           assistantMsg.content += (assistantMsg.content ? '\n\n' : '') + '请求失败：' + msg
         }
       },
-      attachments
+      attachments,
+      selectedKbIds.value.slice(),
+      sessionApprovalOff.value
     )
     if (!hasContent) {
       messages.value = messages.value.filter((m) => m !== assistantMsg)
@@ -862,6 +1118,7 @@ const handleSend = async () => {
     }
   } finally {
     sending.value = false
+    stopApprovalPolling()
     abortController.value = undefined
     await scrollToBottom()
   }
@@ -897,6 +1154,8 @@ const handleNewChat = () => {
     return
   }
   abortController.value?.abort()
+  stopApprovalPolling()
+  resetApprovalState()
   currentChatId.value = undefined
   currentChat.value = undefined
   messages.value = []
@@ -941,6 +1200,11 @@ const handleRenameChat = async (item: QwenPawChat) => {
 /** 初始化 */
 onMounted(async () => {
   await loadAgents()
+})
+
+// 组件卸载时清理审批轮询定时器
+onUnmounted(() => {
+  stopApprovalPolling()
 })
 </script>
 
@@ -1248,5 +1512,39 @@ onMounted(async () => {
 :deep(.markdown-view) {
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
+}
+
+/* 工具审批弹框 */
+.approval-tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.approval-tool-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+.approval-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 12px;
+}
+.approval-hint {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.approval-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 </style>
