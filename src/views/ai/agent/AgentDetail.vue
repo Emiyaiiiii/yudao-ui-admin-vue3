@@ -245,8 +245,8 @@
 import { AgentApi, Agent } from '@/api/ai/agent'
 import { AgentToolApi, AgentTool, AgentToolConfigField } from '@/api/ai/agentTool'
 import { AgentRemoteApi, RemoteMcp } from '@/api/ai/agentRemote'
-import AgentBindMcp from './AgentBindMcp.vue'
-import AgentBindSkill from './AgentBindSkill.vue'
+import AgentBindMcp from './agentbindmcp.vue'
+import AgentBindSkill from './agentbindskill.vue'
 import AgentForm from './AgentForm.vue'
 
 /** 智能体详情抽屉 */

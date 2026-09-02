@@ -54,5 +54,13 @@ export const DocumentApi = {
   // 导出知识库文件 Excel
   exportDocument: async (params) => {
     return await request.download({ url: `/kb/document/export-excel`, params })
+  },
+
+  /** 获取文件短时效签名 URL（用于私有 Bucket 的下载/预览） */
+  getPresignedGetUrl: async (path: string, expirationSeconds?: number) => {
+    return await request.get({
+      url: `/infra/file/presigned-get-url`,
+      params: { url: path, expirationSeconds }
+    })
   }
 }

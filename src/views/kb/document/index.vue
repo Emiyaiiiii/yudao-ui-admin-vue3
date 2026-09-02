@@ -211,9 +211,8 @@
           <el-table-column label="文件链接" align="center" min-width="160px">
             <template #default="scope">
               <el-link
-                v-if="scope.row.fileUrl"
-                :href="scope.row.fileUrl"
-                target="_blank"
+                v-if="scope.row.filePath"
+                @click="handleFileLink(scope.row)"
                 type="primary"
                 :ellipsis="true"
               >
@@ -275,8 +274,16 @@
             :formatter="dateFormatter"
             width="180px"
           />
-          <el-table-column label="操作" align="center" min-width="160px">
+          <el-table-column label="操作" align="center" min-width="200px">
             <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                @click="handleBrowse(scope.row)"
+                v-hasPermi="['kb:document:query']"
+              >
+                浏览
+              </el-button>
               <el-button
                 link
                 type="primary"
@@ -632,6 +639,37 @@ const resetQuery = () => {
 const formRef = ref()
 const openForm = (type: string, id?: number) => {
   formRef.value.open(type, id)
+}
+
+/** 浏览按钮操作：统一经 kkfile 在线预览。
+ *  私有 Bucket 生成短时效签名 URL，其 host 为容器内可解析的存储地址（如 minio:9000），
+ *  kkfile 容器在 Docker 内网直接拉取文件并转成预览，浏览器只访问 /kkfile/，不接触真实文件地址。 */
+const handleBrowse = async (row: Document) => {
+  try {
+    const path = row.filePath || row.fileUrl
+    if (!path) {
+      message.warning('该文件无可访问地址')
+      return
+    }
+    const signedUrl = await DocumentApi.getPresignedGetUrl(path)
+    // 经 nginx /kkfile/ 反代到 kkfile。kkfile 4.4.x 的 getSourceUrl 会对 url 参数做 Base64 解码，
+    // 因此必须先将签名 URL 做 Base64 编码再作为 url 传入（明文传入会导致 host 解析为 null 而报 500）。
+    // 签名 URL 均为 ASCII 字符（中文文件名已 URL 编码），btoa 即可安全编码。
+    window.open(`/kkfile/onlinePreview?url=${encodeURIComponent(btoa(signedUrl))}`, '_blank')
+  } catch {}
+}
+
+/** 文件链接：现取短时签名 URL 后新标签下载。
+ *  不直接存 fileUrl：历史数据存死的内网地址（minio:9000），且签名有有效期，故每次现由后端按配置 domain 生成。 */
+const handleFileLink = async (row: Document) => {
+  try {
+    if (!row.filePath) {
+      message.warning('该文件无可访问路径')
+      return
+    }
+    const signedUrl = await DocumentApi.getPresignedGetUrl(row.filePath)
+    window.open(signedUrl, '_blank')
+  } catch {}
 }
 
 /** 删除按钮操作 */
