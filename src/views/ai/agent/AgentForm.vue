@@ -13,11 +13,13 @@
       <el-form-item label="模型供应商" prop="modelProvider">
         <el-select
           v-model="selectedProvider"
-          placeholder="请先选择供应商"
+          placeholder="请选择供应商"
           style="width: 100%"
           filterable
+          clearable
           @change="handleProviderChange"
         >
+          <el-option label="跟随全局默认模型（推荐）" value="" />
           <el-option
             v-for="provider in providerModels"
             :key="provider.providerId"
@@ -44,6 +46,7 @@
             <span>{{ model.modelName || model.modelId }}</span>
           </el-option>
         </el-select>
+        <div v-if="!selectedProvider" class="text-12px text-gray-400">未指定时使用 QwenPaw 全局激活模型</div>
       </el-form-item>
       <el-form-item label="系统提示词" prop="systemPrompt">
         <el-input
@@ -144,9 +147,7 @@ const formData = ref<Agent>({
   initialSkills: []
 })
 const formRules = reactive({
-  name: [{ required: true, message: '智能体名称不能为空', trigger: 'blur' }],
-  modelProvider: [{ required: true, message: '请选择模型供应商', trigger: 'change' }],
-  modelName: [{ required: true, message: '请选择模型', trigger: 'change' }]
+  name: [{ required: true, message: '智能体名称不能为空', trigger: 'blur' }]
 })
 const formRef = ref() // 表单 Ref
 
@@ -161,27 +162,23 @@ const currentProviderModels = computed(() => {
   return provider?.models || []
 })
 
-/** 加载可用模型列表 */
+/** 加载可用模型列表：仅展示"已配置"的供应商及其模型（与模型管理页筛选口径一致），
+ *  未配置的供应商不作为选项，避免下拉充斥大量不可用项 */
 const loadModels = async () => {
   try {
-    const allModels = await ModelApi.listAllModels()
-    // 按 providerId 分组
-    const groupMap = new Map<string, { providerId: string; providerName: string; models: Array<{ modelId: string; modelName: string }> }>()
-    for (const m of allModels) {
-      const pid = m.providerId as string
-      if (!groupMap.has(pid)) {
-        groupMap.set(pid, {
-          providerId: pid,
-          providerName: (m.providerName as string) || pid,
-          models: []
-        })
+    const providers = await ModelApi.listProviders()
+    const configured = providers.filter((p) => p.configured)
+    providerModels.value = configured.map((p) => {
+      const all = [...(p.models || []), ...(p.extraModels || [])]
+      return {
+        providerId: p.id,
+        providerName: p.name || p.id,
+        models: all.map((m) => ({
+          modelId: m.id,
+          modelName: m.name || m.id
+        }))
       }
-      groupMap.get(pid)!.models.push({
-        modelId: m.modelId as string,
-        modelName: (m.modelName as string) || (m.modelId as string)
-      })
-    }
-    providerModels.value = Array.from(groupMap.values())
+    })
   } catch (e) {
     console.error('加载模型列表失败', e)
   }
@@ -251,10 +248,23 @@ const emit = defineEmits(['success']) // 定义 success 事件，用于操作成
 const submitForm = async () => {
   // 校验表单
   await formRef.value.validate()
+  // 选定了供应商但没选模型 → 拦截；否则视为“跟随全局默认”允许为空
+  if (selectedProvider.value && !selectedModel.value) {
+    message.error('已选择模型供应商，请选择模型')
+    return
+  }
   // 提交请求
   formLoading.value = true
   try {
     const data = formData.value as unknown as Agent
+    if (selectedProvider.value) {
+      data.modelProvider = selectedProvider.value
+      data.modelName = selectedModel.value
+    } else {
+      // 跟随全局默认：不携带供应商/模型，避免后端误将 active_model 覆盖为空的 QwenPaw 全局激活模型
+      delete data.modelProvider
+      delete data.modelName
+    }
     if (formType.value === 'create') {
       await AgentApi.createAgent(data)
       message.success(t('common.createSuccess'))

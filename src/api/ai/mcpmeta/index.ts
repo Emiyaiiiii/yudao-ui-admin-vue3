@@ -17,6 +17,7 @@ export interface McpMeta {
   icon?: string
   status?: number
   sortOrder?: number
+  isInitial?: number
   createTime?: string
 }
 

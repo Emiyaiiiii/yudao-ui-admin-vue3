@@ -14,8 +14,11 @@
           detail.description || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="模型">
-          <el-tag size="small" type="info">{{ detail.modelProvider || 'qwen' }}</el-tag>
-          <span class="ml-8px">{{ detail.modelName }}</span>
+          <template v-if="detail.modelProvider || detail.modelName">
+            <el-tag v-if="detail.modelProvider" size="small" type="info">{{ detail.modelProvider }}</el-tag>
+            <span v-if="detail.modelName" class="ml-8px">{{ detail.modelName }}</span>
+          </template>
+          <span v-else class="text-gray-400">跟随全局默认模型</span>
         </el-descriptions-item>
         <el-descriptions-item label="知识库问答">
           <el-tag :type="detail.enableKbTool ? 'success' : 'info'" size="small">

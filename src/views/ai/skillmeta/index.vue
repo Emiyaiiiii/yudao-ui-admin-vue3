@@ -73,6 +73,15 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="默认挂载" align="center" width="90px">
+        <template #default="scope">
+          <el-switch
+            :model-value="scope.row.isInitial === 1"
+            :disabled="scope.row.visibility !== 1"
+            @change="(val: boolean) => handleToggleInitial(scope.row, val)"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="状态" align="center" width="80px">
         <template #default="scope">
           <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" size="small">
@@ -173,6 +182,10 @@
           <el-radio :label="0">停用</el-radio>
         </el-radio-group>
       </el-form-item>
+      <el-form-item label="默认挂载">
+        <el-switch v-model="editForm.isInitial" :disabled="editForm.visibility !== 1" />
+        <el-text class="ml-8px" type="info" size="small">新建智能体时自动安装（仅公开技能）</el-text>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="editDialogVisible = false">取 消</el-button>
@@ -189,6 +202,7 @@
       <el-descriptions-item label="来源">{{ detailRow.source }}</el-descriptions-item>
       <el-descriptions-item label="版本">{{ detailRow.version || '-' }}</el-descriptions-item>
       <el-descriptions-item label="可见性">{{ detailRow.visibility === 1 ? '公开' : '个人' }}</el-descriptions-item>
+      <el-descriptions-item label="默认挂载">{{ detailRow.isInitial === 1 ? '是' : '否' }}</el-descriptions-item>
       <el-descriptions-item label="描述">{{ detailRow.description || '-' }}</el-descriptions-item>
       <el-descriptions-item label="标签">{{ detailRow.tags || '-' }}</el-descriptions-item>
       <el-descriptions-item label="创建时间">{{ detailRow.createTime }}</el-descriptions-item>
@@ -240,7 +254,8 @@ const editForm = reactive({
   icon: '',
   visibility: 1,
   tags: '',
-  status: 1
+  status: 1,
+  isInitial: 0
 })
 
 // 详情抽屉
@@ -327,6 +342,7 @@ const openEdit = (row: SkillMeta) => {
   editForm.visibility = row.visibility ?? 1
   editForm.tags = row.tags || ''
   editForm.status = row.status ?? 1
+  editForm.isInitial = row.isInitial ?? 0
   editDialogVisible.value = true
 }
 
@@ -342,7 +358,8 @@ const handleEdit = async () => {
       icon: editForm.icon,
       visibility: editForm.visibility,
       tags: editForm.tags,
-      status: editForm.status
+      status: editForm.status,
+      isInitial: editForm.isInitial
     } as SkillMeta)
     success('更新成功')
     editDialogVisible.value = false
@@ -368,6 +385,19 @@ const handleDelete = async (id: number) => {
     success('删除成功')
     await getList()
   } catch {}
+}
+
+/** 切换"默认挂载"标记（仅公开技能可设为默认挂载） */
+const handleToggleInitial = async (row: SkillMeta, val: boolean) => {
+  if (row.visibility !== 1) return
+  try {
+    // 后端 update 校验要求名称等完整字段，故携整行提交
+    await SkillMetaApi.updateSkillMeta({ ...row, isInitial: val ? 1 : 0 })
+    success(val ? '已设为默认挂载' : '已取消默认挂载')
+    row.isInitial = val ? 1 : 0
+  } catch {
+    // 失败时回弹：model-value 由 row.isInitial 驱动，无需额外 reset
+  }
 }
 
 /** 初始化 **/

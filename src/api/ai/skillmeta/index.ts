@@ -13,6 +13,7 @@ export interface SkillMeta {
   ownerUserId?: number
   tags?: string // JSON 数组字符串
   status?: number // 0=停用, 1=启用
+  isInitial?: number // 0=否, 1=默认挂载到新建智能体
   createTime?: string
 }
 

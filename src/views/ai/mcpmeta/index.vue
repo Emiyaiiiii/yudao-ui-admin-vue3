@@ -76,6 +76,15 @@
         </template>
       </el-table-column>
       <el-table-column label="描述" align="center" prop="description" min-width="160px" />
+      <el-table-column label="默认挂载" align="center" width="90px" v-if="checkPermi(['ai-agent:mcp-meta:update'])">
+        <template #default="scope">
+          <el-switch
+            :model-value="scope.row.isInitial === 1"
+            :disabled="scope.row.type !== 0"
+            @change="(val: boolean) => handleToggleInitial(scope.row, val)"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="状态" align="center" width="80px">
         <template #default="scope">
           <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" size="small">
@@ -211,6 +220,10 @@
           <el-radio :value="0">停用</el-radio>
         </el-radio-group>
       </el-form-item>
+      <el-form-item label="默认挂载" prop="isInitial">
+        <el-switch v-model="formData.isInitial" :disabled="formData.type !== 0" />
+        <el-text class="ml-8px" type="info" size="small">新建智能体时自动挂载（仅系统级）</el-text>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="formVisible = false">取 消</el-button>
@@ -253,12 +266,16 @@
           {{ detailData.status === 1 ? '启用' : '停用' }}
         </el-tag>
       </el-descriptions-item>
+      <el-descriptions-item label="默认挂载">
+        {{ detailData.isInitial === 1 ? '是' : '否' }}
+      </el-descriptions-item>
     </el-descriptions>
   </el-drawer>
 </template>
 
 <script setup lang="ts" name="AiMcpMetaIndex">
 import { formatDate } from '@/utils/formatTime'
+import { checkPermi } from '@/utils/permission'
 import { McpMetaApi, McpMeta } from '@/api/ai/mcpmeta'
 
 const message = useMessage()
@@ -316,7 +333,8 @@ const formData = ref<McpMeta>({
   cwd: '',
   toolsWhitelist: '',
   description: '',
-  status: 1
+  status: 1,
+  isInitial: 0
 } as McpMeta)
 const formRef = ref()
 
@@ -392,7 +410,8 @@ const resetForm = () => {
     cwd: '',
     toolsWhitelist: '',
     description: '',
-    status: 1
+    status: 1,
+    isInitial: 0
   }
   formRef.value?.resetFields()
 }
@@ -438,6 +457,19 @@ const handleDelete = async (row: McpMeta) => {
     message.success(t('common.delSuccess'))
     await getList()
   } catch {}
+}
+
+/** 切换"默认挂载"标记（仅系统级 MCP 可设为默认挂载） */
+const handleToggleInitial = async (row: McpMeta, val: boolean) => {
+  if (row.type !== 0) return
+  try {
+    // 后端 update 校验要求编码等完整字段，故携整行提交
+    await McpMetaApi.updateMcpMeta({ ...row, isInitial: val ? 1 : 0 })
+    message.success(val ? '已设为默认挂载' : '已取消默认挂载')
+    row.isInitial = val ? 1 : 0
+  } catch {
+    // 失败时回弹：model-value 由 row.isInitial 驱动，无需额外 reset
+  }
 }
 
 /** 详情 */
