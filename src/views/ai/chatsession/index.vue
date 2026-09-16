@@ -259,14 +259,42 @@
               </template>
             </div>
           </TransitionGroup>
+          <div class="slash-panel-wrap">
+            <Transition name="slash-pop">
+              <div v-if="slashVisible" class="slash-panel">
+                <div class="slash-panel-title">选择 Skill</div>
+                <div v-if="slashLoading" class="slash-panel-empty">加载中...</div>
+                <template v-else>
+                  <div
+                    v-for="(item, i) in slashCandidates"
+                    :key="item.name"
+                    class="slash-item"
+                    :class="{ active: i === slashActiveIndex }"
+                    @mousedown.prevent="applySlashSkill(item)"
+                    @mouseenter="slashActiveIndex = i"
+                  >
+                    <div class="slash-item-name">/{{ item.name }}</div>
+                    <div v-if="item.description" class="slash-item-desc">{{ item.description }}</div>
+                  </div>
+                  <div v-if="slashCandidates.length === 0" class="slash-panel-empty">
+                    没有匹配的 Skill
+                  </div>
+                </template>
+              </div>
+            </Transition>
+          </div>
           <el-input
             v-model="inputMessage"
             type="textarea"
             :rows="3"
             resize="none"
-            placeholder="请输入问题，Enter 发送，Shift+Enter 换行"
+            placeholder="请输入问题，输入 / 可选 Skill，Enter 发送，Shift+Enter 换行"
             :disabled="!agentId || sending"
-            @keydown.enter.prevent="handleSend"
+            @input="handleSlashInput"
+            @keydown.enter.prevent="handleSendOrSelect"
+            @keydown.up.prevent="slashMove(-1)"
+            @keydown.down.prevent="slashMove(1)"
+            @keydown.esc="slashRescan"
           />
           <div class="flex justify-between mt-8px">
             <div class="flex gap-8px">
@@ -354,6 +382,7 @@
 <script setup lang="ts">
 import { formatDate } from '@/utils/formatTime'
 import { AgentApi, Agent } from '@/api/ai/agent'
+import { AgentRemoteApi } from '@/api/ai/agentRemote'
 import { LibraryApi, Library } from '@/api/kb/library'
 import { CategoryApi, Category } from '@/api/kb/category'
 import { handleTree } from '@/utils/tree'
@@ -451,8 +480,12 @@ const handleAgentChange = () => {
   search.value = ''
   pendingAttachments.value = []
   selectedKbIds.value = []
+  slashVisible.value = false
+  slashSkills.value = []
+  slashQuery.value = ''
   loadChats()
   loadModels()
+  loadSlashSkills()
   // 拉取分类树 + 可用知识库，组装层级检索选项
   Promise.all([
     CategoryApi.listCategoriesForUser().catch(() => []),
@@ -644,8 +677,109 @@ const messages = ref<ChatMessageView[]>([])
 const messageBoxRef = ref()
 const inputMessage = ref('')
 const sending = ref(false)
+
+// ============ 斜杠 Skill 补全（复用 QwenPaw 已安装 Skill 透传） ============
+const slashSkills = ref<any[]>([]) // 当前智能体已安装的全部 Skill（按 agent 缓存）
+const slashVisible = ref(false) // 面板是否展示
+const slashLoading = ref(false) // 拉取 Skill 中
+const slashActiveIndex = ref(0) // 当前高亮项
+const slashQuery = ref('') // "/" 后的已输入前缀
+/** 满足前缀过滤的候选 */
+const slashCandidates = computed(() => {
+  const q = slashQuery.value.trim().toLowerCase()
+  if (!q) return slashSkills.value || []
+  return (slashSkills.value || []).filter((s) =>
+    String(s.name || '').toLowerCase().includes(q)
+  )
+})
+
+/** 拉取当前智能体已安装 Skill（切 agent/首拉时调用一次，失败静默） */
+const loadSlashSkills = async () => {
+  if (!agentId.value) {
+    slashSkills.value = []
+    return
+  }
+  slashLoading.value = true
+  try {
+    const resp: any = await AgentRemoteApi.listSkills(agentId.value)
+    const list: any[] = Array.isArray(resp) ? resp : resp?.data || []
+    slashSkills.value = list || []
+    return slashSkills.value
+  } catch (e) {
+    console.warn('[slash] 拉取 Skills 失败', e)
+    slashSkills.value = []
+    return []
+  } finally {
+    slashLoading.value = false
+  }
+}
 const abortController = ref<AbortController>()
 const draftSessionId = ref<string>() // 草稿态会话 sessionId（发首条消息时透传，用于定位新建会话）
+
+/** 输入框内容变化：当前为 "/" 开头时展示/刷新面板（光标须在末尾），否则关闭 */
+const handleSlashInput = () => {
+  const val = inputMessage.value
+  const m = /^\/\s*([^\n]*)$/.exec(val)
+  if (m && agentId.value && !sending.value) {
+    slashQuery.value = m[1] || ''
+    slashActiveIndex.value = 0
+    if (slashSkills.value.length === 0) {
+      loadSlashSkills()
+    }
+    slashVisible.value = slashCandidates.value.length > 0
+  } else {
+    slashVisible.value = false
+  }
+}
+
+/** 关闭面板（esc 触发，重扫是否还有面板需求） */
+const slashRescan = () => {
+  slashVisible.value = false
+}
+
+/** 上下移动高亮 */
+const slashMove = (dir: number) => {
+  if (!slashVisible.value || slashCandidates.value.length === 0) return
+  const n = slashCandidates.value.length
+  slashActiveIndex.value = (slashActiveIndex.value + dir + n) % n
+}
+
+/** 选中某个 Skill：把 "/{name} " 填入输入框（不发送），让用户继续输入其它指令 */
+const applySlashSkill = (item: any) => {
+  const name = String(item.name || '').trim()
+  if (!name) return
+  const typed = inputMessage.value
+  const replacement = `/${name} `
+  inputMessage.value = typed.replace(/^\/\s*[^\n]*$/, replacement)
+  slashVisible.value = false
+  // 聚焦输入框并把光标移到末尾，保持输入框可继续输入
+  nextTick(() => {
+    const el = document.querySelector(
+      '.chat-input-wrap textarea'
+    ) as HTMLTextAreaElement | null
+    if (el) {
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    }
+  })
+}
+
+/**
+ * 回车处理：若斜杠面板可见且有高亮选中项则选中；否则按原逻辑发送。
+ * 注：选中 Skill 后发送即可（Skill 作为一种普通消息发给 QwenPaw，其本身会解析 /skill 前缀），
+ * 与 QwenPaw 前端行为一致。
+ */
+const handleSendOrSelect = () => {
+  if (slashVisible.value && slashCandidates.value.length > 0) {
+    const item = slashCandidates.value[slashActiveIndex.value]
+    if (item) {
+      applySlashSkill(item)
+      return
+    }
+  }
+  handleSend()
+}
 
 // ============ 工具审批（弹框 + 轮询） ============
 const approvalVisible = ref(false) // 审批弹框是否展示
@@ -1022,6 +1156,7 @@ const handleSend = async () => {
   })
   inputMessage.value = ''
   pendingAttachments.value = []
+  slashVisible.value = false
   sending.value = true
   await scrollToBottom()
   // 每次发送开始：若本会话仍处审批模式则开启轮询，等 QwenPaw 下发待审批请求
@@ -1359,6 +1494,66 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+/* 斜杠 Skill 补全面板 */
+.slash-panel-wrap {
+  position: relative;
+}
+.slash-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.slash-panel-title {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.slash-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.slash-item.active {
+  background: var(--el-color-primary-light-9);
+}
+.slash-item-name {
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+.slash-item-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-panel-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+.slash-pop-enter-active,
+.slash-pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.slash-pop-enter-from,
+.slash-pop-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .pending-att-card {
