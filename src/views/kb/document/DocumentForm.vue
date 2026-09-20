@@ -30,20 +30,30 @@
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
-            :limit="1"
+            :multiple="true"
+            :file-list="fileItems"
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
-            :on-exceed="handleExceed"
             drag
           >
             <Icon icon="ep:upload-filled" class="el-icon--upload" />
             <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 PDF、Word、Excel、PPT、图片、压缩包等格式
+                支持 PDF、Word、Excel、PPT、图片、压缩包等格式，可多选
+                <el-button link type="primary" style="padding: 0" @click="openFolderPicker">或选择整个文件夹</el-button>
+                （保留目录层级）
               </div>
             </template>
           </el-upload>
+          <input
+            ref="folderInputRef"
+            type="file"
+            multiple
+            webkitdirectory
+            style="display: none"
+            @change="handleFolderChange"
+          />
         </el-form-item>
         <el-form-item label="文件描述">
           <el-input v-model="formData.description" type="textarea" :rows="2" placeholder="请输入文件描述（可选）" />
@@ -98,6 +108,7 @@
 import { DocumentApi, Document } from '@/api/kb/document'
 import { LibraryApi } from '@/api/kb/library'
 import { FolderApi } from '@/api/kb/folder'
+import { useKbUpload } from '../useKbUpload'
 
 /** 知识库文件 表单 */
 defineOptions({ name: 'DocumentForm' })
@@ -163,24 +174,17 @@ const libraryName = computed(() => {
 
 // 上传文件相关
 const uploadRef = ref()
-const selectedFile = ref<File | null>(null)
-
-/** 文件选择变化 */
-const handleFileChange = (file: any) => {
-  selectedFile.value = file.raw
-  // 清除文件校验错误
-  formRef.value?.clearValidate('file')
-}
-
-/** 文件移除 */
-const handleFileRemove = () => {
-  selectedFile.value = null
-}
-
-/** 超出限制 */
-const handleExceed = () => {
-  message.warning('只能上传一个文件，请先移除已选文件')
-}
+const {
+  fileItems,
+  folderInputRef,
+  handleFileChange,
+  handleFileRemove,
+  openFolderPicker,
+  handleFolderChange,
+  clearFiles,
+  isEmpty,
+  uploadAll
+} = useKbUpload((fd) => DocumentApi.uploadDocument(fd))
 
 /** 格式化文件大小 */
 const formatSize = (size: number): string => {
@@ -222,7 +226,7 @@ const submitForm = async () => {
   // 校验表单
   await formRef.value.validate()
   // 新增模式：手动校验文件是否已上传
-  if (formType.value === 'create' && !selectedFile.value) {
+  if (formType.value === 'create' && isEmpty()) {
     message.warning('请先上传文件')
     return
   }
@@ -230,21 +234,14 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     if (formType.value === 'create') {
-      // 新增：上传文件到知识库，后端自动获取文件名/类型/大小
-      const formDataObj = new FormData()
-      formDataObj.append('file', selectedFile.value!)
-      formDataObj.append('kbId', String(formData.value.kbId))
-      if (formData.value.folderId) {
-        formDataObj.append('folderId', String(formData.value.folderId))
-      }
-      if (formData.value.description) {
-        formDataObj.append('description', formData.value.description)
-      }
-      if (formData.value.tags) {
-        formDataObj.append('tags', formData.value.tags)
-      }
-      await DocumentApi.uploadDocument(formDataObj)
-      message.success(t('common.createSuccess'))
+      // 新增：支持多文件/文件夹层级上传，逐文件上传，后端自动获取文件名/类型/大小
+      const count = await uploadAll({
+        kbId: formData.value.kbId!,
+        folderId: formData.value.folderId,
+        description: formData.value.description,
+        tags: formData.value.tags
+      })
+      message.success(count > 1 ? `共上传 ${count} 个文件` : t('common.createSuccess'))
     } else {
       // 编辑：更新文件描述/标签/状态
       const data = formData.value as unknown as Document
@@ -277,7 +274,7 @@ const resetForm = () => {
     viewCount: undefined,
     status: 0
   }
-  selectedFile.value = null
+  clearFiles()
   formRef.value?.resetFields()
   // 清除上传组件
   nextTick(() => {

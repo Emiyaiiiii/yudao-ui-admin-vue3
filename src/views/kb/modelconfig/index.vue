@@ -27,6 +27,7 @@
             <el-option label="大模型(LLM)" value="llm" />
             <el-option label="嵌入/向量(Embedding)" value="embedding" />
             <el-option label="OCR/多模态" value="ocr" />
+            <el-option label="MinerU(文档解析)" value="mineru" />
             <el-option label="重排(Rerank)" value="rerank" />
           </el-select>
         </el-col>
@@ -413,7 +414,7 @@ const handleCardClick = (config: ModelConfig) => {
 
 // ================== 辅助函数 ==================
 const modelTypeDisplayMap: Record<string, string> = {
-  llm: '大模型', embedding: '嵌入/向量', ocr: 'OCR/多模态', rerank: '重排'
+  llm: '大模型', embedding: '嵌入/向量', ocr: 'OCR/多模态', mineru: 'MinerU(文档解析)', rerank: '重排'
 }
 
 const getModelTypeDisplay = (modelType?: string) =>

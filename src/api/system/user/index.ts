@@ -36,6 +36,11 @@ export const getSimpleUserListByNickname = (nickname: string) => {
   })
 }
 
+// 按用户ID批量查询精简用户（成员字段回显昵称用，避免全量拉取用户列表；走后台 system/user/simple-list?ids=）
+export const getSimpleUserListByIds = (ids: Array<number | string>): Promise<any> => {
+  return request.get({ url: '/system/user/simple-list', params: { ids: ids.join(',') } })
+}
+
 // 查询用户管理列表
 export const getUserPage = (params: PageParam) => {
   return request.get({ url: '/system/user/page', params })

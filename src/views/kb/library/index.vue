@@ -220,7 +220,7 @@ import { LibraryApi, Library } from '@/api/kb/library'
 import { CategoryApi } from '@/api/kb/category'
 import { LevelConfigApi } from '@/api/kb/levelconfig'
 import { handleTree } from '@/utils/tree'
-import { getSimpleUserList } from '@/api/system/user'
+import { getSimpleUserListByIds } from '@/api/system/user'
 import * as DeptApi from '@/api/system/dept'
 import LibraryForm from './LibraryForm.vue'
 
@@ -287,6 +287,8 @@ const getList = async () => {
     const data = await LibraryApi.getLibraryPage(queryParams)
     list.value = data.list
     total.value = data.total
+    // 按当前页 owner 按需补昵称（避免全量拉取用户列表）
+    refreshOwnerMap(data.list)
   } finally {
     loading.value = false
   }
@@ -363,10 +365,9 @@ onMounted(() => {
 
 /** 加载搜索选项 */
 const loadSearchOptions = async () => {
-  const [categoryData, levelData, userData, deptData] = await Promise.all([
+  const [categoryData, levelData, deptData] = await Promise.all([
     CategoryApi.getCategoryList(undefined),
     LevelConfigApi.getSimpleLevelConfigList(),
-    getSimpleUserList(),
     DeptApi.getSimpleDeptList()
   ])
   categoryTree.value = handleTree(categoryData, 'id', 'parentId')
@@ -389,14 +390,7 @@ const loadSearchOptions = async () => {
   })
   levelConfigMap.value = lvMap
 
-  // 构建用户ID→昵称映射
-  const uMap: Record<number, string> = {}
-  userData.forEach((u: any) => {
-    uMap[u.id] = u.nickname
-  })
-  userMap.value = uMap
-
-  // 构建部门ID→名称映射
+  // 构建部门ID→名称映射（用户昵称不预拉全量，按当前页可见 owner 按需加载，见 refreshOwnerMap）
   const dMap: Record<number, string> = {}
   const flattenDept = (items: any[]) => {
     items.forEach((item: any) => {
@@ -406,5 +400,25 @@ const loadSearchOptions = async () => {
   }
   flattenDept(deptData)
   deptMap.value = dMap
+}
+
+/** 按当前页知识库的 ownerId（用户维度）批量补昵称，避免全量拉取用户列表 */
+const refreshOwnerMap = async (rows: Library[]) => {
+  const ids = new Set<string>()
+  ;(rows || []).forEach((row) => {
+    const cfg = row?.kbLevelId ? levelConfigMap.value[row.kbLevelId] : null
+    if (cfg && cfg.ownerDim === 1 && row.ownerId) ids.add(String(row.ownerId))
+  })
+  const missing = [...ids].filter((id) => !userMap.value[id])
+  if (!missing.length) return
+  try {
+    const res: any = await getSimpleUserListByIds(missing)
+    const list = Array.isArray(res) ? res : []
+    const map = { ...userMap.value }
+    ;(list || []).forEach((u: any) => (map[u.id] = u.nickname))
+    userMap.value = map
+  } catch {
+    // 昵称缺失时回退显示原始ID
+  }
 }
 </script>

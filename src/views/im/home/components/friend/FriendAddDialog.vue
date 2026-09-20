@@ -233,7 +233,8 @@ async function handleSearch() {
   }
   loading.value = true
   try {
-    users.value = (await getSimpleUserListByNickname(query)) || []
+    const res: any = await getSimpleUserListByNickname(query)
+    users.value = Array.isArray(res?.data) ? res.data : []
   } catch (error) {
     console.warn('[IM FriendAddDialog] 搜索用户失败', error)
   } finally {

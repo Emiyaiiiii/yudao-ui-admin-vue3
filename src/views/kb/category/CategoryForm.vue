@@ -49,7 +49,25 @@
           inactive-text="否"
         />
         <div class="project-flag-tip">
-          开启后，该分类下创建的知识库会自动纳入「项目成员管理」，并按项目成员控制文档访问。院级/公司下的「项目成果」分类会自动打开。
+          开启后，该分类下创建的知识库只允许「项目成员」打开，并可按下方「打开依据成员字段」指定用哪个成员字段判断。院级/公司下的「项目成果」分类会自动打开。
+        </div>
+      </el-form-item>
+
+      <el-form-item v-if="formData.isProject === 1" label="打开依据成员字段" prop="projectMemberFieldKey">
+        <el-select
+          v-model="formData.projectMemberFieldKey"
+          :placeholder="memberFieldOptions.length ? '请选择（必须指定）' : '请先添加「项目成员」列'"
+          :disabled="!memberFieldOptions.length"
+          clearable
+          style="width: 100%"
+        >
+          <el-option v-for="m in memberFieldOptions" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+        <div class="project-flag-tip" v-if="memberFieldOptions.length">
+          项目成果库打开权限按此字段的值实时判断当前用户是否成员；必须选择，留空则项目成果库无人可打开（仅租户管理员/超管可进）。
+        </div>
+        <div class="project-flag-tip warning-tip" v-else>
+          当前分类还没有「项目成员」字段，请在下方「表头配置」里添加一个 member 类型的自定义列后，再来此选择。
         </div>
       </el-form-item>
 
@@ -172,7 +190,8 @@ const formData = ref({
   sort: undefined,
   status: undefined,
   columnConfig: undefined,
-  isProject: 0
+  isProject: 0,
+  projectMemberFieldKey: undefined
 })
 const formRules = reactive({
   name: [{ required: true, message: '分类名称不能为空', trigger: 'blur' }]
@@ -184,6 +203,15 @@ const categoryMetaMap = ref<Record<number, { name?: string; parentId?: number; i
 
 // 表头配置（列模板）
 const columnList = ref<KbColumn[]>([])
+
+/** 可供选作「打开依据」的 member 类型字段（下拉选项） */
+const memberFieldOptions = computed(() => {
+  const opts: Array<{ value: string; label: string }> = []
+  columnList.value
+    .filter((c) => c.type === 'member' && c.key)
+    .forEach((c) => opts.push({ value: c.key, label: c.label || c.key }))
+  return opts
+})
 
 /** 尚未添加的内置列（用于下拉） */
 const availableBuiltins = computed(() => {
@@ -209,7 +237,7 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       const data = await CategoryApi.getCategory(id)
-      formData.value = { ...data, isProject: data.isProject ?? 0 }
+      formData.value = { ...data, isProject: data.isProject ?? 0, projectMemberFieldKey: data.projectMemberFieldKey }
       // 解析已有的表头配置
       columnList.value = parseColumnConfig(data.columnConfig)
       maybeAutoProjectFlag()
@@ -298,7 +326,8 @@ const resetForm = () => {
     sort: undefined,
     status: undefined,
     columnConfig: undefined,
-    isProject: 0
+    isProject: 0,
+    projectMemberFieldKey: undefined
   }
   columnList.value = parseColumnConfig(null)
   formRef.value?.resetFields()
@@ -330,6 +359,16 @@ const maybeAutoProjectFlag = () => {
     formData.value.isProject = 1
   }
 }
+
+// 关闭「项目成果库」开关时，清空已选的「打开依据成员字段」，避免非项目库残留无意义配置
+watch(
+  () => formData.value.isProject,
+  (val) => {
+    if (val !== 1) {
+      formData.value.projectMemberFieldKey = undefined
+    }
+  }
+)
 
 /** 获得知识库分类树 */
 const getCategoryTree = async () => {
@@ -416,5 +455,9 @@ const getCategoryTree = async () => {
   font-size: 12px;
   line-height: 1.4;
   color: var(--el-text-color-secondary);
+}
+
+.warning-tip {
+  color: var(--el-color-warning);
 }
 </style>

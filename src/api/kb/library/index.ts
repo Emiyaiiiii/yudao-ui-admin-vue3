@@ -17,6 +17,8 @@ export interface Library {
   creator?: string // 创建人
   extValues?: Record<string, string> // 自定义字段值(key=字段key, value=字段值字符串)
   memberIds?: Array<string | number> // 项目成员用户ID，仅项目成果库写入 kb_project_member
+  processConfig?: Record<string, any> // KB级处理配置(JSON): {chunking, retrieval, rerank, model}；留空回退租户级配置
+  imageStrategy?: string // 图片处理方案: none/ocr/vl_summary/vision
 }
 
 // 知识库 API
@@ -79,5 +81,15 @@ export const LibraryApi = {
   /** 检查当前用户是否有该知识库的管理权限 */
   canManage: async (kbId: number) => {
     return await request.get({ url: `/kb/library/can-manage`, params: { kbId } })
+  },
+
+  /** 检查当前用户能否打开该知识库（项目成果库：租户管理员短路或为项目成员；非项目库恒为 true） */
+  canOpen: async (kbId: number) => {
+    return await request.get({ url: `/kb/library/can-open`, params: { kbId } })
+  },
+
+  /** 获取后处理基础设施就绪状态（Neo4j 是否已配置，供 GraphEnabled 开关置灰） */
+  getPostprocessInfra: async (): Promise<{ neo4jReady: boolean; neo4jEnabledConfig: boolean }> => {
+    return await request.get({ url: `/kb/library/postprocess-infra` })
   }
 }

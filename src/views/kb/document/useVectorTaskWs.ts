@@ -1,6 +1,6 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { getAccessToken } from '@/utils/auth'
-import type { VectorTaskWsMessage } from '@/api/kb/vectorTask'
+import { VectorTaskApi, type VectorTaskWsMessage } from '@/api/kb/vectorTask'
 
 /**
  * 向量任务 WebSocket 监听 composable
@@ -178,9 +178,49 @@ export function useVectorTaskWs() {
     return wsMsg?.step
   }
 
+  /** 获取细粒度进度文案（如 "正在 OCR 图片 12/290"；来自 WebSocket 消息的 errorMsg 字段） */
+  function getErrorMsg(taskId: string | undefined): string | undefined {
+    const wsMsg = getTaskStatus(taskId)
+    return wsMsg?.errorMsg
+  }
+
   /** 清除指定任务的状态缓存 */
   function clearTaskStatus(taskId: string) {
     taskStatusMap.delete(taskId)
+  }
+
+  /**
+   * 拉取任务历史详情（含 stages 时间线），用于刷新页面后回显处理时间轴。
+   * 返回 null 表示未获取到（任务不存在/接口异常）。
+   */
+  async function fetchTaskDetail(taskId: string | undefined): Promise<VectorTaskWsMessage | null> {
+    if (!taskId) return null
+    try {
+      const data = await VectorTaskApi.getTask(taskId)
+      if (!data) return null
+      // 后端 stages 为 JSON 字符串，解析为数组；解析失败保留 undefined
+      let stages: VectorTaskWsMessage['stages']
+      if (typeof data.stages === 'string' && data.stages) {
+        try {
+          stages = JSON.parse(data.stages)
+        } catch {
+          stages = undefined
+        }
+      } else {
+        stages = data.stages || undefined
+      }
+      return {
+        taskId,
+        status: data.status,
+        progress: data.progress || 0,
+        step: data.currentStep || '',
+        chunkCount: data.chunkCount || 0,
+        errorMsg: data.errorMsg || '',
+        stages
+      }
+    } catch {
+      return null
+    }
   }
 
   return {
@@ -190,6 +230,8 @@ export function useVectorTaskWs() {
     resolveVectorStatus,
     getProgress,
     getStep,
-    clearTaskStatus
+    getErrorMsg,
+    clearTaskStatus,
+    fetchTaskDetail
   }
 }

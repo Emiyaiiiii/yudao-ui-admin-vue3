@@ -251,8 +251,8 @@
                       :show-text="true"
                       class="vector-progress-bar"
                     />
-                    <span class="vector-step-text" v-if="getStep(doc.vectorTaskId)">
-                      {{ getStep(doc.vectorTaskId) }}
+                    <span class="vector-step-text" v-if="getStep(doc.vectorTaskId) || getErrorMsg(doc.vectorTaskId)">
+                      {{ getErrorMsg(doc.vectorTaskId) || getStep(doc.vectorTaskId) }}
                     </span>
                   </div>
                 </div>
@@ -281,20 +281,26 @@
         <el-upload
           ref="uploadRef"
           :auto-upload="false"
+          :multiple="true"
           :show-file-list="true"
-          :limit="1"
+          :file-list="fileItems"
           :on-change="handleFileChange"
-          :on-exceed="
-            () => {
-              ElMessage.warning('只能上传一个文件')
-            }
-          "
+          :on-remove="handleFileRemove"
         >
           <el-button type="primary" plain>选择文件</el-button>
+          <el-button type="primary" plain @click="openFolderPicker">选择文件夹</el-button>
           <template #tip>
-            <div class="el-upload__tip">支持 pdf/docx/xlsx/pptx/jpg/png 等格式</div>
+            <div class="el-upload__tip">支持 pdf/docx/xlsx/pptx/jpg/png 等格式，可多选，选文件夹时保留目录层级</div>
           </template>
         </el-upload>
+        <input
+          ref="folderInputRef"
+          type="file"
+          multiple
+          webkitdirectory
+          style="display: none"
+          @change="handleFolderChange"
+        />
       </el-form-item>
       <el-form-item label="目标文件夹">
         <el-select v-model="uploadForm.folderId" placeholder="根目录" clearable style="width: 100%">
@@ -356,7 +362,7 @@ import { CategoryApi, type Category } from '@/api/kb/category'
 import { LibraryApi, type Library } from '@/api/kb/library'
 import { FolderApi, type Folder } from '@/api/kb/folder'
 import { DocumentApi } from '@/api/kb/document'
-import { ProjectMemberApi } from '@/api/kb/projectmember'
+import { useKbUpload } from '../useKbUpload'
 import { LevelConfigApi } from '@/api/kb/levelconfig'
 import { UserDeptApi } from '@/api/kb/userdept'
 import {
@@ -368,7 +374,7 @@ import {
 import { handleTree } from '@/utils/tree'
 import { dateFormatter } from '@/utils/formatTime'
 import { useUserStore } from '@/store/modules/user'
-import { getSimpleUserList } from '@/api/system/user'
+import { getSimpleUserListByIds } from '@/api/system/user'
 import * as DeptApi from '@/api/system/dept'
 import LibraryForm from '../library/LibraryForm.vue'
 import DocumentForm from '../document/DocumentForm.vue'
@@ -380,7 +386,7 @@ defineOptions({ name: 'KbScreen' })
 const userStore = useUserStore()
 
 // ========== 向量任务 WebSocket 监听 ==========
-const { resolveVectorStatus, getProgress, getStep } = useVectorTaskWs()
+const { resolveVectorStatus, getProgress, getStep, getErrorMsg } = useVectorTaskWs()
 
 const getVectorStatus = (doc: any): number | undefined => {
   return resolveVectorStatus(doc.vectorStatus, doc.vectorTaskId)
@@ -465,6 +471,8 @@ const loadLibraries = async (categoryId?: number) => {
       pageSize: 200
     })
     libraryList.value = res.list || []
+    // 按当前可见 creator/owner/成员ID 按需补昵称（避免全量拉取用户列表）
+    refreshUserMap(res.list || [])
   } finally {
     libraryLoading.value = false
   }
@@ -561,7 +569,7 @@ const handleLibraryRowClick = async (lib: Library) => {
   // 项目库：检查是否为项目成员
   if (lib.isProject === 1) {
     try {
-      isProjectMember.value = await ProjectMemberApi.checkMember(lib.id)
+      isProjectMember.value = await LibraryApi.canOpen(lib.id)
     } catch {
       isProjectMember.value = false
     }
@@ -732,35 +740,38 @@ const uploading = ref(false)
 const uploadRef = ref()
 const uploadFormRef = ref()
 const uploadForm = reactive({
-  file: null as File | null,
   folderId: null as number | null,
   description: ''
 })
-const uploadRules = {
-  file: [{ required: true, message: '请选择文件', trigger: 'change' }]
-}
-
-const handleFileChange = (uploadFile: any) => {
-  uploadForm.file = uploadFile.raw
-}
+const uploadRules = {}
+const {
+  fileItems,
+  folderInputRef,
+  handleFileChange,
+  handleFileRemove,
+  openFolderPicker,
+  handleFolderChange,
+  clearFiles,
+  isEmpty,
+  uploadAll
+} = useKbUpload((fd) => DocumentApi.uploadDocument(fd))
 
 const handleUpload = async () => {
-  if (!uploadForm.file) {
+  if (isEmpty()) {
     ElMessage.warning('请先选择文件')
     return
   }
   if (!selectedLibrary.value) return
   uploading.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', uploadForm.file)
-    formData.append('kbId', String(selectedLibrary.value.id))
-    if (uploadForm.folderId) formData.append('folderId', String(uploadForm.folderId))
-    if (uploadForm.description) formData.append('description', uploadForm.description)
-    await DocumentApi.uploadDocument(formData)
-    ElMessage.success('上传成功')
+    const count = await uploadAll({
+      kbId: selectedLibrary.value.id,
+      folderId: uploadForm.folderId,
+      description: uploadForm.description
+    })
+    ElMessage.success(count > 1 ? `共上传 ${count} 个文件` : '上传成功')
     uploadDialogVisible.value = false
-    uploadForm.file = null
+    clearFiles()
     uploadForm.folderId = null
     uploadForm.description = ''
     loadDocuments(currentFolderId.value)
@@ -917,15 +928,7 @@ onMounted(async () => {
 
 const loadNameMaps = async () => {
   try {
-    const [userData, deptData] = await Promise.all([
-      getSimpleUserList(),
-      DeptApi.getSimpleDeptList()
-    ])
-    const uMap: Record<string, string> = {}
-    userData.forEach((u: any) => {
-      uMap[u.id] = u.nickname
-    })
-    userMap.value = uMap
+    const deptData = await DeptApi.getSimpleDeptList()
     const dMap: Record<string, string> = {}
     const flattenDept = (items: any[]) => {
       items.forEach((item: any) => {
@@ -935,8 +938,43 @@ const loadNameMaps = async () => {
     }
     flattenDept(deptData)
     deptMap.value = dMap
+    // 用户昵称不预拉全量：由 loadLibraries 按当前可见的 creator/owner/成员ID 按需补，见 refreshUserMap
   } catch {
     // 静默失败
+  }
+}
+
+/** 按当前可见知识库涉及的用户ID（creator / 用户维度owner / 成员字段）批量补昵称，避免全量拉取用户列表 */
+const refreshUserMap = async (rows: Library[]) => {
+  const memberKeys = dynamicColumns.value
+    .filter((c) => c.type === 'member' && c.key)
+    .map((c) => c.key as string)
+  const ids = new Set<string>()
+  ;(rows || []).forEach((row: any) => {
+    if (row.creator) ids.add(String(row.creator))
+    const cfg = row?.kbLevelId ? levelConfigMap.value[row.kbLevelId] : null
+    if (cfg && cfg.ownerDim === 1 && row.ownerId) ids.add(String(row.ownerId))
+    memberKeys.forEach((k) => {
+      const raw = row?.extValues?.[k]
+      if (!raw) return
+      try {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) arr.forEach((id: any) => ids.add(String(id)))
+      } catch {
+        // 非JSON数组则忽略
+      }
+    })
+  })
+  const missing = [...ids].filter((id) => !userMap.value[id])
+  if (!missing.length) return
+  try {
+    const res: any = await getSimpleUserListByIds(missing)
+    const list = Array.isArray(res) ? res : []
+    const map = { ...userMap.value }
+    ;(list || []).forEach((u: any) => (map[u.id] = u.nickname))
+    userMap.value = map
+  } catch {
+    // 昵称缺失时回退显示原始ID
   }
 }
 </script>

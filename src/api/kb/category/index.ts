@@ -11,6 +11,7 @@ export interface Category {
           status: number; // 状态: 0=启用, 1=禁用
           columnConfig?: string; // 表头配置(JSON): 该分类下知识库列表的动态表头
           isProject?: number; // 是否项目成果库分类: 0=否, 1=是
+          projectMemberFieldKey?: string; // 项目成果库打开依据成员字段key（为空回退内置 project_member）
     children?: Category[];
   }
 

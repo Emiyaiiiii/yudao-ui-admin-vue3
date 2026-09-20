@@ -37,6 +37,16 @@ export const vectorStatusConfig: Record<
   [VectorTaskStatus.CANCELLED]: { label: '已取消', type: 'info' }
 }
 
+/** 处理阶段时间线节点（python state_bus 写入，Java 透传） */
+export interface VectorTaskStage {
+  stage: string // download/parse/chunk/embed/store/postprocess
+  status: 'processing' | 'completed' | 'failed' | 'skipped' | 'cancelled'
+  begin_ts?: number // 开始毫秒时间戳
+  end_ts?: number // 结束毫秒时间戳
+  duration_s?: number // 阶段耗时(秒)
+  metrics?: Record<string, any> // 阶段指标: chunk_count/text_chars/vector_count/es_indexed 等
+}
+
 /** WebSocket 推送的向量任务状态消息 */
 export interface VectorTaskWsMessage {
   taskId: string
@@ -45,6 +55,7 @@ export interface VectorTaskWsMessage {
   step: string
   chunkCount: number
   errorMsg: string
+  stages?: VectorTaskStage[] // 处理阶段时间线
 }
 
 // 向量处理任务 API

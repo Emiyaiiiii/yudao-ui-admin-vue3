@@ -197,6 +197,7 @@
           :data="list"
           :stripe="true"
           :show-overflow-tooltip="true"
+          :empty-text="queryParams.kbId ? '暂无数据' : '请先选择知识库后查看文档'"
           @selection-change="handleRowCheckboxChange"
         >
           <el-table-column type="selection" width="55" />
@@ -259,8 +260,8 @@
                     :text-inside="false"
                     class="vector-progress-bar"
                   />
-                  <span class="vector-step-text" v-if="getStep(scope.row.vectorTaskId)">
-                    {{ getStep(scope.row.vectorTaskId) }}
+                  <span class="vector-step-text" v-if="getStep(scope.row.vectorTaskId) || getErrorMsg(scope.row.vectorTaskId)">
+                    {{ getErrorMsg(scope.row.vectorTaskId) || getStep(scope.row.vectorTaskId) }}
                   </span>
                 </div>
               </div>
@@ -279,10 +280,10 @@
               <el-button
                 link
                 type="primary"
-                @click="handleBrowse(scope.row)"
+                @click="handleFileLink(scope.row)"
                 v-hasPermi="['kb:document:query']"
               >
-                浏览
+                文件链接
               </el-button>
               <el-button
                 link
@@ -312,6 +313,14 @@
                 重新处理
               </el-button>
               <el-button
+                v-if="scope.row.vectorTaskId"
+                link
+                type="info"
+                @click="handleShowTimeline(scope.row)"
+              >
+                时间线
+              </el-button>
+              <el-button
                 link
                 type="danger"
                 @click="handleDelete(scope.row.id)"
@@ -336,6 +345,15 @@
 
   <!-- 表单弹窗：添加/修改 -->
   <DocumentForm ref="formRef" @success="getList" />
+
+  <!-- 处理时间线弹窗 -->
+  <Dialog title="向量处理时间线" v-model="timelineDialogVisible" width="520px">
+    <div v-if="timelineLoading" v-loading="timelineLoading" class="timeline-loading" />
+    <VectorTaskTimeline v-else :stages="timelineStages" />
+    <template #footer>
+      <el-button @click="timelineDialogVisible = false">关 闭</el-button>
+    </template>
+  </Dialog>
 
   <!-- 新建文件夹弹窗 -->
   <Dialog title="新建文件夹" v-model="folderDialogVisible" width="400px">
@@ -364,9 +382,11 @@ import {
   VectorTaskApi,
   VectorTaskStatus,
   vectorStatusConfig,
-  isTerminalStatus
+  isTerminalStatus,
+  type VectorTaskStage
 } from '@/api/kb/vectorTask'
 import { useVectorTaskWs } from './useVectorTaskWs'
+import VectorTaskTimeline from './VectorTaskTimeline.vue'
 import DocumentForm from './DocumentForm.vue'
 
 /** 知识库文件 列表 */
@@ -376,7 +396,7 @@ const message = useMessage()
 const { t } = useI18n()
 
 // ========== 向量任务 WebSocket 监听 ==========
-const { resolveVectorStatus, getProgress, getStep } = useVectorTaskWs()
+const { resolveVectorStatus, getProgress, getStep, getErrorMsg, getTaskStatus, fetchTaskDetail } = useVectorTaskWs()
 
 /** 获取文档的向量状态（优先使用 WebSocket 实时数据） */
 const getVectorStatus = (row: Document): number | undefined => {
@@ -403,6 +423,31 @@ const getVectorStatusType = (row: Document): string => {
 const showProgress = (row: Document): boolean => {
   const status = getVectorStatus(row)
   return status === VectorTaskStatus.PROCESSING
+}
+
+// ========== 处理时间线弹窗 ==========
+const timelineDialogVisible = ref(false)
+const timelineLoading = ref(false)
+const timelineStages = ref<VectorTaskStage[]>([])
+
+/** 打开处理时间线：优先用 WS 实时 stages，缺失时从任务详情拉取 */
+const handleShowTimeline = async (row: Document) => {
+  timelineDialogVisible.value = true
+  timelineStages.value = []
+  // 1) WS 实时数据（处理中任务由 state_bus 实时推送 stages）
+  const wsMsg = getTaskStatus(row.vectorTaskId)
+  if (wsMsg?.stages?.length) {
+    timelineStages.value = wsMsg.stages
+    return
+  }
+  // 2) 兜底：从任务详情拉取历史 stages
+  timelineLoading.value = true
+  try {
+    const detail = await fetchTaskDetail(row.vectorTaskId)
+    timelineStages.value = detail?.stages || []
+  } finally {
+    timelineLoading.value = false
+  }
 }
 
 /** 取消向量任务 */
@@ -614,6 +659,13 @@ const kbIdFormatter = (_row: any, _column: any, cellValue: number): string => {
 const getList = async () => {
   loading.value = true
   try {
+    // 未选择知识库时不发起查询：文档无独立权限，必须限定在知识库范围内查询，
+    // 避免绕过知识库权限直接拉取全量文档
+    if (!queryParams.kbId) {
+      list.value = []
+      total.value = 0
+      return
+    }
     const data = await DocumentApi.getDocumentPage(queryParams)
     list.value = data.list
     total.value = data.total
@@ -641,25 +693,7 @@ const openForm = (type: string, id?: number) => {
   formRef.value.open(type, id)
 }
 
-/** 浏览按钮操作：统一经 kkfile 在线预览。
- *  私有 Bucket 生成短时效签名 URL，其 host 为容器内可解析的存储地址（如 minio:9000），
- *  kkfile 容器在 Docker 内网直接拉取文件并转成预览，浏览器只访问 /kkfile/，不接触真实文件地址。 */
-const handleBrowse = async (row: Document) => {
-  try {
-    const path = row.filePath || row.fileUrl
-    if (!path) {
-      message.warning('该文件无可访问地址')
-      return
-    }
-    const signedUrl = await DocumentApi.getPresignedGetUrl(path)
-    // 经 nginx /kkfile/ 反代到 kkfile。kkfile 4.4.x 的 getSourceUrl 会对 url 参数做 Base64 解码，
-    // 因此必须先将签名 URL 做 Base64 编码再作为 url 传入（明文传入会导致 host 解析为 null 而报 500）。
-    // 签名 URL 均为 ASCII 字符（中文文件名已 URL 编码），btoa 即可安全编码。
-    window.open(`/kkfile/onlinePreview?url=${encodeURIComponent(btoa(signedUrl))}`, '_blank')
-  } catch {}
-}
-
-/** 文件链接：现取短时签名 URL 后新标签下载。
+/** 文件链接：现取短时签名 URL 后新标签打开。
  *  不直接存 fileUrl：历史数据存死的内网地址（minio:9000），且签名有有效期，故每次现由后端按配置 domain 生成。 */
 const handleFileLink = async (row: Document) => {
   try {
@@ -700,6 +734,10 @@ const handleRowCheckboxChange = (records: Document[]) => {
 
 /** 导出按钮操作 */
 const handleExport = async () => {
+  if (!queryParams.kbId) {
+    message.warning('请先选择知识库')
+    return
+  }
   try {
     await message.exportConfirm()
     exportLoading.value = true
@@ -824,5 +862,9 @@ const loadLibraryOptions = async () => {
   color: var(--el-text-color-secondary);
   margin-top: 2px;
   display: block;
+}
+
+.timeline-loading {
+  min-height: 80px;
 }
 </style>
