@@ -557,19 +557,34 @@ const consumeSseStream = async (
         // 是否目标到 reasoning？根据 knownType 决定去向
         const targetReasoning = knownType === 'reasoning'
         if (isReconnect) return // replay 段忽略
+        // QwenPaw 协议：delta=true 是增量（追加）；delta=false 是该 part 的最终完整文本（覆盖，避免重复拼接）
+        const isDelta = event.delta === true
         if (targetReasoning) {
-          options.onReasoning?.(event.text)
-          fullReasoning += event.text
+          if (isDelta) {
+            options.onReasoning?.(event.text)
+            fullReasoning += event.text
+          } else {
+            fullReasoning = event.text
+          }
         } else {
-          options.onMessage?.(event.text)
-          fullContent += event.text
+          if (isDelta) {
+            options.onMessage?.(event.text)
+            fullContent += event.text
+          } else {
+            fullContent = event.text
+          }
         }
         return
       }
       if (partType === 'thinking' && typeof event.thinking === 'string' && event.thinking.length > 0) {
         if (isReconnect) return
-        options.onReasoning?.(event.thinking)
-        fullReasoning += event.thinking
+        const isDelta = event.delta === true
+        if (isDelta) {
+          options.onReasoning?.(event.thinking)
+          fullReasoning += event.thinking
+        } else {
+          fullReasoning = event.thinking
+        }
         return
       }
       // data 块：工具调用/结果
