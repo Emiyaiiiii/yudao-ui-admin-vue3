@@ -275,7 +275,7 @@
             :formatter="dateFormatter"
             width="180px"
           />
-          <el-table-column label="操作" align="center" min-width="200px">
+          <el-table-column label="操作" align="center" min-width="240px">
             <template #default="scope">
               <el-button
                 link
@@ -294,41 +294,55 @@
               >
                 编辑
               </el-button>
-              <el-button
-                v-if="scope.row.vectorTaskId && !isTerminalStatus(getVectorStatus(scope.row))"
-                link
-                type="warning"
-                @click="handleCancelVectorTask(scope.row)"
-                :disabled="!canManageCurrentKb"
+              <el-dropdown
+                trigger="click"
+                @command="(cmd: string) => handleDropdownCommand(cmd, scope.row)"
               >
-                取消任务
-              </el-button>
-              <el-button
-                v-if="isRetryable(scope.row)"
-                link
-                type="success"
-                @click="handleRetryVectorTask(scope.row)"
-                :disabled="!canManageCurrentKb"
-              >
-                重新处理
-              </el-button>
-              <el-button
-                v-if="scope.row.vectorTaskId"
-                link
-                type="info"
-                @click="handleShowTimeline(scope.row)"
-              >
-                时间线
-              </el-button>
-              <el-button
-                link
-                type="danger"
-                @click="handleDelete(scope.row.id)"
-                v-hasPermi="['kb:document:delete']"
-                :disabled="!canManageCurrentKb"
-              >
-                删除
-              </el-button>
+                <el-button link type="primary">
+                  <span>
+                    更多
+                    <Icon icon="ep:arrow-down" />
+                  </span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-if="scope.row.vectorTaskId && !isTerminalStatus(getVectorStatus(scope.row))"
+                      command="cancelVectorTask"
+                      :disabled="!canManageCurrentKb"
+                    >
+                      取消任务
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="isRetryable(scope.row)"
+                      command="retryVectorTask"
+                      :disabled="!canManageCurrentKb"
+                    >
+                      重新处理
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="scope.row.vectorTaskId"
+                      command="showTimeline"
+                    >
+                      时间线
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="isChunkReady(scope.row)"
+                      command="showChunks"
+                    >
+                      切片
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      command="delete"
+                      v-hasPermi="['kb:document:delete']"
+                      :disabled="!canManageCurrentKb"
+                      divided
+                    >
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>
@@ -352,6 +366,20 @@
     <VectorTaskTimeline v-else :stages="timelineStages" />
     <template #footer>
       <el-button @click="timelineDialogVisible = false">关 闭</el-button>
+    </template>
+  </Dialog>
+
+  <!-- 切片浏览/编辑弹窗（#7） -->
+  <Dialog title="切片浏览" v-model="chunkDialogVisible" width="980px">
+    <ChunkView
+      v-if="chunkDialogVisible"
+      ref="chunkViewRef"
+      :doc-id="chunkDocId"
+      :kb-id="chunkKbId"
+      :can-edit="canManageCurrentKb"
+    />
+    <template #footer>
+      <el-button @click="chunkDialogVisible = false">关 闭</el-button>
     </template>
   </Dialog>
 
@@ -388,6 +416,7 @@ import {
 import { useVectorTaskWs } from './useVectorTaskWs'
 import VectorTaskTimeline from './VectorTaskTimeline.vue'
 import DocumentForm from './DocumentForm.vue'
+import ChunkView from './ChunkView.vue'
 
 /** 知识库文件 列表 */
 defineOptions({ name: 'Document' })
@@ -450,6 +479,26 @@ const handleShowTimeline = async (row: Document) => {
   }
 }
 
+// ========== 切片浏览/编辑（#7） ==========
+const chunkDialogVisible = ref(false)
+const chunkViewRef = ref()
+const chunkDocId = ref(0)
+const chunkKbId = ref(0)
+
+/** 是否可查看切片：向量处理已完成且有任务记录 */
+const isChunkReady = (row: Document): boolean => {
+  return row.vectorTaskId != null && getVectorStatus(row) === VectorTaskStatus.COMPLETED
+}
+
+/** 打开切片浏览弹窗 */
+const handleShowChunks = (row: Document) => {
+  chunkDocId.value = row.id
+  chunkKbId.value = row.kbId ?? queryParams.kbId ?? 0
+  chunkDialogVisible.value = true
+  // 等 Dialog 渲染后触发加载
+  nextTick(() => chunkViewRef.value?.load?.())
+}
+
 /** 取消向量任务 */
 const handleCancelVectorTask = async (row: Document) => {
   if (!row.vectorTaskId) return
@@ -480,6 +529,27 @@ const handleRetryVectorTask = async (row: Document) => {
     message.success('已重新提交处理')
     await getList()
   } catch {}
+}
+
+/** 下拉菜单命令分发 */
+const handleDropdownCommand = (cmd: string, row: Document) => {
+  switch (cmd) {
+    case 'cancelVectorTask':
+      handleCancelVectorTask(row)
+      break
+    case 'retryVectorTask':
+      handleRetryVectorTask(row)
+      break
+    case 'showTimeline':
+      handleShowTimeline(row)
+      break
+    case 'showChunks':
+      handleShowChunks(row)
+      break
+    case 'delete':
+      handleDelete(row.id)
+      break
+  }
 }
 
 const loading = ref(true)
