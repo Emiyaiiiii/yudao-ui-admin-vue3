@@ -630,8 +630,9 @@ const graphDrawerVisible = ref(false)
 const graphDrawerLoading = ref(false)
 const graphDrawerPage = ref<WikiPageVO | null>(null)
 
-// 类型过滤（allow-list，全选=不过滤）
-const graphFilterTypes = ref<Set<string>>(new Set(['summary', 'entity', 'concept', 'synthesis', 'comparison', 'index']))
+// 类型过滤（allow-list，全选=不过滤）。图谱固定展示的页面类型集合，不含 index（index 为
+// KB 级总览引言页，非图谱节点类型）：即便不过滤，后端也不会返回 index 节点。
+const graphFilterTypes = ref<Set<string>>(new Set(['summary', 'entity', 'concept', 'synthesis', 'comparison']))
 const legendTypes = [
   { type: 'summary', label: '摘要', color: '#0052d9' },
   { type: 'entity', label: '实体', color: '#2ba471' },
@@ -649,7 +650,7 @@ const BLOOM_MAX_NODES = 1500
 const GROW_FRONTIER_CONCURRENCY = 4
 
 function graphFilterTypesToArray(): string | undefined {
-  const all = ['summary', 'entity', 'concept', 'synthesis', 'comparison', 'index']
+  const all = ['summary', 'entity', 'concept', 'synthesis', 'comparison']
   if (all.every(t => graphFilterTypes.value.has(t))) return undefined
   return Array.from(graphFilterTypes.value).join(',')
 }

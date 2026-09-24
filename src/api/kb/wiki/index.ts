@@ -139,6 +139,8 @@ export interface WikiIssueVO {
   slug: string
   issueType: string // contradictory_facts/mixed_entities/out_of_date/attention
   description?: string
+  /** 怀疑导致污染的来源文档 ID 列表（对齐 WeKnora suspected_knowledge_ids） */
+  suspectedKnowledgeIds?: string[]
   status: string // pending/ignored/resolved
   reportedBy?: string
   createTime?: string
