@@ -14,11 +14,12 @@ const props = defineProps({
   width: propTypes.oneOfType([String, Number]).def('40%'),
   scroll: propTypes.bool.def(false), // 是否开启滚动条。如果是的话，按照 maxHeight 设置最大高度
   maxHeight: propTypes.oneOfType([String, Number]).def('400px'),
-  loading: propTypes.bool.def(false)
+  loading: propTypes.bool.def(false),
+  draggable: propTypes.bool.def(true) // 是否可拖拽
 })
 
 const getBindValue = computed(() => {
-  const delArr: string[] = ['fullscreen', 'title', 'maxHeight', 'appendToBody', 'loading']
+  const delArr: string[] = ['fullscreen', 'title', 'maxHeight', 'appendToBody', 'loading', 'draggable']
   const attrs = useAttrs()
   const obj = { ...attrs, ...props }
   for (const key in obj) {
@@ -79,7 +80,7 @@ function closedHandler() {
     :width="width"
     destroy-on-close
     lock-scroll
-    draggable
+    :draggable="draggable"
     class="com-dialog"
     :show-close="false"
     @close="closeHandler"
@@ -136,6 +137,25 @@ function closedHandler() {
     align-items: center;
   }
 
+  .#{$elNamespace}-scrollbar {
+    height: 100%;
+    flex: 1 1 auto;
+  }
+
+  .#{$elNamespace}-scrollbar__wrap {
+    height: 100% !important;
+    overflow-y: auto;
+  }
+
+  // 让滚动视图撑满弹窗内容高度，避免内容不足时底部留白
+  .#{$elNamespace}-scrollbar__view {
+    height: 100%;
+    min-height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+
   .#{$elNamespace}-dialog {
     margin: 0 !important;
 
@@ -148,6 +168,16 @@ function closedHandler() {
 
     &__body {
       padding: 15px !important;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+
+      > div {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
     }
 
     &__footer {

@@ -168,6 +168,15 @@
               <Icon icon="ep:plus" class="mr-5px" /> 新增
             </el-button>
             <el-button
+              type="warning"
+              plain
+              @click="openWiki"
+              v-hasPermi="['kb:document:query']"
+              :disabled="!currentKbId"
+            >
+              <Icon icon="ep:share" class="mr-5px" /> Wiki
+            </el-button>
+            <el-button
               type="success"
               plain
               @click="handleExport"
@@ -397,6 +406,24 @@
       <el-button @click="folderDialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
+
+  <!-- Wiki 入口弹窗（基于当前知识库） -->
+  <Dialog
+    title="知识库 Wiki"
+    v-model="wikiVisible"
+    :fullscreen="false"
+    width="1200px"
+    :scroll="true"
+    maxHeight="85vh"
+    :draggable="false"
+  >
+    <WikiBrowser
+      v-if="wikiVisible && wikiKbId"
+      :key="wikiKbId"
+      :kb-id="wikiKbId"
+      @open-source-doc="handleOpenSourceDoc"
+    />
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -417,6 +444,7 @@ import { useVectorTaskWs } from './useVectorTaskWs'
 import VectorTaskTimeline from './VectorTaskTimeline.vue'
 import DocumentForm from './DocumentForm.vue'
 import ChunkView from './ChunkView.vue'
+import WikiBrowser from '../wiki/WikiBrowser.vue'
 
 /** 知识库文件 列表 */
 defineOptions({ name: 'Document' })
@@ -497,6 +525,23 @@ const handleShowChunks = (row: Document) => {
   chunkDialogVisible.value = true
   // 等 Dialog 渲染后触发加载
   nextTick(() => chunkViewRef.value?.load?.())
+}
+
+/** Wiki 来源文档跳转（source_refs 里的 doc_id）：关闭 wiki 弹窗 → 打开该文档切片浏览 */
+const handleOpenSourceDoc = async (docId: string) => {
+  wikiVisible.value = false
+  const id = Number(docId)
+  if (!id) return
+  try {
+    const doc = await DocumentApi.getDocument(id)
+    if (doc) {
+      handleShowChunks(doc)
+    } else {
+      message.warning(`未找到来源文档：${docId}`)
+    }
+  } catch {
+    message.warning(`打开来源文档失败：${docId}`)
+  }
 }
 
 /** 取消向量任务 */
@@ -817,6 +862,20 @@ const handleExport = async () => {
   } finally {
     exportLoading.value = false
   }
+}
+
+// ========== Wiki 入口 ==========
+const wikiVisible = ref(false)
+const wikiKbId = ref(0)
+
+/** 打开 Wiki 弹窗（需先选择知识库才能拿到 kbId） */
+const openWiki = () => {
+  if (!currentKbId.value) {
+    message.warning('请先选择知识库')
+    return
+  }
+  wikiKbId.value = currentKbId.value
+  wikiVisible.value = true // WikiBrowser 内部按 kbId 自动加载
 }
 
 /** 初始化 **/
