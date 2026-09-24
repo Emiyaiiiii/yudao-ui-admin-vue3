@@ -601,11 +601,6 @@ const handleSaved = async () => {
 // ========== 修订 ==========
 const revisionVisible = ref(false)
 
-const openRevision = (row: WikiPageVO) => {
-  currentPage.value = row
-  revisionVisible.value = true
-}
-
 /** 回滚成功 */
 const handleReverted = async () => {
   await loadTree()
@@ -846,8 +841,11 @@ async function growFrontier() {
     await Promise.all(workers)
     if (responses.length === 0) return
 
+    const current = graph.value
+    if (!current) return
+
     preserveLayout.value = true
-    let merged = graph.value
+    let merged: WikiGraphData = current
     for (const incoming of responses) merged = mergeGraphData(merged, incoming)
     evictBloomOverflow(merged)
     graph.value = merged
