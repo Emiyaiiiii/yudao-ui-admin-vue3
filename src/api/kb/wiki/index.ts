@@ -10,7 +10,7 @@ export interface WikiPageVO {
   summary?: string
   aliases?: string // JSON 数组字符串（昵称/别名）
   pageType?: string // wiki 页面分类知名（概念/文档等，由后端定义）
-  folderId?: number
+  folderId?: string // 所属目录实体ID（空=根；目录实体 id 为字符串）
   categoryPath?: string
   depth?: number
   /** 来源文档 ID 列表（doc_id） */
@@ -39,7 +39,7 @@ export interface WikiPageSaveReqVO {
   summary?: string
   aliases?: string
   pageType?: string
-  folderId?: number
+  folderId?: string // 所属目录实体ID（空=根）
   status?: number
   expectedRevision?: number
 }
@@ -209,5 +209,73 @@ export const WikiApi = {
       url: `/kb/wiki/issue/status`,
       params: { kbId, slug, issueType, status }
     })
+  },
+
+  /** 收尾重建：死链清理 + 交叉链接 + 入链重建 + index 兜底（纯算法，不含 LLM） */
+  rebuildLinks: async (kbId: number): Promise<Record<string, any>> => {
+    const data = await request.post({ url: `/kb/wiki/rebuild-links`, params: { kbId } })
+    return data as Record<string, any>
+  },
+
+  /** Wiki 健康统计：页数/链接数/孤立页/死链数/待处理问题数 */
+  getStats: async (kbId: number): Promise<Record<string, any>> => {
+    const data = await request.get({ url: `/kb/wiki/stats`, params: { kbId } })
+    return data as Record<string, any>
+  },
+
+  /** 最近一次 Wiki 攒批状态（阶段② 蒸馏进度 + 待处理文档数） */
+  getBatchLatest: async (kbId: number): Promise<Record<string, any>> => {
+    const data = await request.get({ url: `/kb/wiki/batch/latest`, params: { kbId } })
+    return data as Record<string, any>
+  },
+
+  /** Wiki 质量检查（lint）：孤立页/死链/空内容/失效来源/缺失交叉链接 + 健康分 */
+  lint: async (kbId: number): Promise<Record<string, any>> => {
+    const data = await request.get({ url: `/kb/wiki/lint`, params: { kbId } })
+    return data as Record<string, any>
+  },
+
+  /** 自动修复可修项：死链拆文本 / 空内容归档 / 失效来源清理 */
+  autoFix: async (kbId: number): Promise<Record<string, any>> => {
+    const data = await request.post({ url: `/kb/wiki/auto-fix`, params: { kbId } })
+    return data as Record<string, any>
+  },
+
+  // ---- 独立目录实体（P1-1） ----
+
+  /** 目录实体树（含每目录直接挂载页数） */
+  folderTree: async (kbId: number): Promise<any[]> => {
+    const data = await request.get({ url: `/kb/wiki/folder-tree`, params: { kbId } })
+    return data as any[]
+  },
+
+  /** 创建目录（parentId 为空表示根） */
+  createFolder: async (kbId: number, name: string, parentId = ''): Promise<Record<string, any>> => {
+    const data = await request.post({ url: `/kb/wiki/folder`, params: { kbId, name, parentId } })
+    return data as Record<string, any>
+  },
+
+  /** 重命名目录（级联更新子树与页面派生路径） */
+  renameFolder: async (kbId: number, folderId: string, name: string): Promise<Record<string, any>> => {
+    const data = await request.put({ url: `/kb/wiki/folder/rename`, params: { kbId, folderId, name } })
+    return data as Record<string, any>
+  },
+
+  /** 移动目录到新父级（禁止移入自身子树） */
+  moveFolder: async (kbId: number, folderId: string, parentId = ''): Promise<Record<string, any>> => {
+    const data = await request.put({ url: `/kb/wiki/folder/move`, params: { kbId, folderId, parentId } })
+    return data as Record<string, any>
+  },
+
+  /** 删除目录及整棵子树（子树内页面归位到根） */
+  deleteFolder: async (kbId: number, folderId: string): Promise<Record<string, any>> => {
+    const data = await request.delete({ url: `/kb/wiki/folder`, params: { kbId, folderId } })
+    return data as Record<string, any>
+  },
+
+  /** 移动页面到指定目录（folderId 为空表示根） */
+  movePage: async (kbId: number, slug: string, folderId = ''): Promise<Record<string, any>> => {
+    const data = await request.put({ url: `/kb/wiki/page/move`, params: { kbId, slug, folderId } })
+    return data as Record<string, any>
   }
 }

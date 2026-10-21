@@ -69,7 +69,12 @@
                   </el-button>
                   <el-button link type="primary" @click="handleDiscover(provider)" v-if="provider.supportModelDiscovery"
                     v-hasPermi="['ai-agent:model:query']">
-                    <Icon icon="ep:search" />
+                    <Icon icon="ep:search" class="mr-2px" />
+                    发现模型
+                  </el-button>
+                  <el-button link type="primary" @click="openPoolDialog(provider)" v-hasPermi="['ai-agent:model:query']">
+                    <Icon icon="ep:list" class="mr-2px" />
+                    模型池
                   </el-button>
                   <el-button link type="danger" @click="handleDeleteCustomProvider(provider)" v-if="provider.isCustom"
                     v-hasPermi="['ai-agent:model:delete']">
@@ -215,6 +220,57 @@
     </template>
   </el-dialog>
 
+  <!-- 模型池选择弹窗 -->
+  <el-dialog v-model="poolDialogVisible" :title="`模型池 - ${poolProviderName}`" width="660px">
+    <div class="flex items-center gap-8px mb-12px">
+      <el-button size="small" :type="poolTab === 'candidates' ? 'primary' : 'default'"
+        @click="poolTab = 'candidates'; reloadPool()">可添加 ({{ poolCandidateCount }})</el-button>
+      <el-button size="small" :type="poolTab === 'selected' ? 'primary' : 'default'"
+        @click="poolTab = 'selected'; reloadPool()">已添加 ({{ poolSelectedCount }})</el-button>
+      <el-input v-model="poolSearch" placeholder="搜索模型" clearable size="small" style="width:200px"
+        @keyup.enter="reloadPool" @clear="reloadPool" />
+      <el-button size="small" @click="reloadPool">搜索</el-button>
+      <div class="ml-auto">
+        <el-button v-if="poolTab === 'candidates'" size="small" type="primary" plain :loading="poolBatchLoading"
+          @click="handlePoolSelectAll(true)">全部添加</el-button>
+        <el-button v-else size="small" type="danger" plain :loading="poolBatchLoading"
+          @click="handlePoolSelectAll(false)">全部移除</el-button>
+      </div>
+    </div>
+    <el-table :data="poolModels" v-loading="poolLoading" height="420" size="small">
+      <el-table-column label="模型" min-width="220">
+        <template #default="{ row }">
+          <div>{{ row.name || row.id }}</div>
+          <div class="text-12px text-gray-400">{{ row.id }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="能力" width="150">
+        <template #default="{ row }">
+          <el-tag v-if="row.supportsVideo" size="small" type="warning" class="mr-4px">视频</el-tag>
+          <el-tag v-else-if="row.supportsImage" size="small" type="success" class="mr-4px">视觉</el-tag>
+          <el-tag v-else-if="row.supportsMultimodal" size="small" type="info" class="mr-4px">多模态</el-tag>
+          <el-tag v-if="row.isFree" size="small" type="success">免费</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="100" align="right">
+        <template #default="{ row }">
+          <el-button v-if="poolTab === 'candidates'" link type="primary" size="small"
+            @click="handlePoolToggle(row, true)">添加</el-button>
+          <el-button v-else link type="danger" size="small"
+            @click="handlePoolToggle(row, false)">移除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="flex justify-between items-center mt-12px">
+      <span class="text-12px text-gray-400">共 {{ poolTotal }} 个</span>
+      <el-pagination v-model:current-page="poolPage" :page-size="poolPageSize" :total="poolTotal"
+        layout="prev, pager, next" @current-change="loadPool" />
+    </div>
+    <template #footer>
+      <el-button @click="poolDialogVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
   <!-- 默认 LLM 选择弹窗 -->
   <el-dialog v-model="llmDialogVisible" title="设置默认 LLM" width="560px" @open="openLlmDialogReady">
     <el-form label-width="100px">
@@ -235,7 +291,7 @@
 </template>
 
 <script setup lang="ts">
-import { ModelApi, Provider, ModelInfo, ActiveModel } from '@/api/ai/model'
+import { ModelApi, Provider, ModelInfo, ActiveModel, PoolModel } from '@/api/ai/model'
 
 defineOptions({ name: 'AiModelProvider' })
 
@@ -363,13 +419,96 @@ const handleDiscover = async (provider: Provider) => {
   try {
     const models = await ModelApi.discoverModels(provider.id)
     if (models.length === 0) {
-      message.info('未发现新模型')
+      message.info('未发现新模型，请检查 API Key / Base URL 或稍后重试')
     } else {
-      message.success(`发现 ${models.length} 个模型`)
-      await getList()
+      message.success(`发现 ${models.length} 个模型，请在模型池中选择要启用的模型`)
     }
+    await getList()
+    // 发现只填充“目录”，必须再到模型池里选中才会进入可选 models，这里自动打开模型池
+    openPoolDialog(provider)
   } catch (e) {
     message.error('发现模型失败')
+  }
+}
+
+/** ==================== 模型池 ==================== */
+const poolDialogVisible = ref(false)
+const poolLoading = ref(false)
+const poolBatchLoading = ref(false)
+const poolProviderId = ref('')
+const poolProviderName = ref('')
+const poolTab = ref<'candidates' | 'selected'>('candidates')
+const poolSearch = ref('')
+const poolModels = ref<PoolModel[]>([])
+const poolTotal = ref(0)
+const poolSelectedCount = ref(0)
+const poolCandidateCount = ref(0)
+const poolPage = ref(1)
+const poolPageSize = 20
+
+const openPoolDialog = (provider: Provider) => {
+  poolProviderId.value = provider.id
+  poolProviderName.value = provider.name
+  poolTab.value = 'candidates'
+  poolSearch.value = ''
+  poolPage.value = 1
+  poolModels.value = []
+  poolTotal.value = 0
+  poolDialogVisible.value = true
+  loadPool()
+}
+
+const loadPool = async () => {
+  if (!poolProviderId.value) return
+  poolLoading.value = true
+  try {
+    const res = await ModelApi.getModelPool(poolProviderId.value, {
+      offset: (poolPage.value - 1) * poolPageSize,
+      limit: poolPageSize,
+      tab: poolTab.value,
+      search: poolSearch.value
+    })
+    poolModels.value = res?.models || []
+    poolTotal.value = res?.total || 0
+    poolSelectedCount.value = res?.selectedCount || 0
+    poolCandidateCount.value = res?.candidateCount || 0
+  } catch (e) {
+    message.error('加载模型池失败')
+  } finally {
+    poolLoading.value = false
+  }
+}
+
+const reloadPool = () => {
+  poolPage.value = 1
+  loadPool()
+}
+
+/** 加入 / 移出可用模型（写入 / 移出 models） */
+const handlePoolToggle = async (row: PoolModel, selected: boolean) => {
+  try {
+    await ModelApi.updateModelPool(poolProviderId.value, row.id, selected)
+    message.success(selected ? '已加入可用模型' : '已移出可用模型')
+    await loadPool()
+    // 模型集变了，刷新 Provider 列表，默认 LLM 下拉随之更新
+    await getList()
+  } catch (e) {
+    message.error(selected ? '加入失败' : '移除失败')
+  }
+}
+
+/** 全选添加 / 全部移除 */
+const handlePoolSelectAll = async (selected: boolean) => {
+  poolBatchLoading.value = true
+  try {
+    await ModelApi.selectAllModels(poolProviderId.value, selected)
+    message.success(selected ? '已全部加入' : '已全部移除')
+    await loadPool()
+    await getList()
+  } catch (e) {
+    message.error('操作失败')
+  } finally {
+    poolBatchLoading.value = false
   }
 }
 

@@ -4,6 +4,7 @@
     "useDefineForClassFields": true,
     "module": "esnext",
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "strict": true,
     "jsx": "preserve",
     "sourceMap": true,
@@ -31,6 +32,7 @@
       // "vite-plugin-svg-icons/client"
     ],
     "outDir": "target", // 请保留这个属性，防止tsconfig.json文件报错
+    "rootDir": ".",
     "typeRoots": ["./node_modules/@types/", "./types"]
   },
   "include": [

@@ -52,6 +52,25 @@ export interface ModelConfigTestResult {
   }
 }
 
+/** 参数探测请求（OpenAI 兼容接口自动获取模型参数） */
+export interface ModelConfigDetectReq {
+  url: string
+  appkey?: string
+  model: string
+  modelType?: string
+}
+
+/** 参数探测结果 */
+export interface ModelConfigDetectResult {
+  success: boolean
+  message?: string
+  maxTokens?: number
+  contextLength?: number
+  dimensions?: number // 向量维度（embedding 类模型）
+  vlSupported?: boolean
+  thinkingEnabled?: boolean
+}
+
 /** 复制请求参数 */
 export interface ModelConfigCopyReq {
   id: number
@@ -124,6 +143,11 @@ export const ModelConfigApi = {
   // 测试连接
   test: async (data: ModelConfigTestReq) => {
     return await request.post({ url: `/kb/model-config/test`, data })
+  },
+
+  // 探测模型参数（OpenAI 兼容接口自动获取并返回）
+  detectParams: async (data: ModelConfigDetectReq) => {
+    return await request.post({ url: `/kb/model-config/detect-params`, data })
   },
 
   // 复制配置

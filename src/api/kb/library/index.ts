@@ -17,8 +17,7 @@ export interface Library {
   creator?: string // 创建人
   extValues?: Record<string, string> // 自定义字段值(key=字段key, value=字段值字符串)
   memberIds?: Array<string | number> // 项目成员用户ID，仅项目成果库写入 kb_project_member
-  processConfig?: Record<string, any> // KB级处理配置(JSON): {chunking, retrieval, rerank, model}；留空回退租户级配置
-  imageStrategy?: string // 图片处理方案: none/ocr/vl_summary/vision
+  processConfig?: Record<string, any> // KB级处理配置(JSON): {chunking, retrieval, rerank, model, postprocess}；postprocess.wiki.{granularity,citation_batch_runes,citation_concurrency} 为 Wiki 抽取配置；留空回退租户级配置
 }
 
 // 知识库 API

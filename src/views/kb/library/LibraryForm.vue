@@ -51,8 +51,8 @@
         />
       </el-form-item>
 
-      <el-form-item label="图片处理方案" prop="imageStrategy">
-        <el-select v-model="formData.imageStrategy" placeholder="请选择图片处理方案" clearable style="width: 100%">
+      <el-form-item label="图片处理方案">
+        <el-select v-model="formData.processConfig.chunking.image_strategy" placeholder="留空使用租户默认方案" clearable style="width: 100%">
           <el-option label="纯文本（图片只回显URL）" value="none" />
           <el-option label="OCR文字（提取图片文字入库）" value="ocr" />
           <el-option label="VL总结（大模型看图生成总结）" value="vl_summary" />
@@ -226,6 +226,26 @@
           <el-form-item label="Wiki 生成">
             <el-switch v-model="formData.processConfig.postprocess.wiki_enabled" active-text="开启" inactive-text="关闭" />
           </el-form-item>
+          <el-form-item v-if="formData.processConfig.postprocess.wiki_enabled" label="Wiki 抽取粒度">
+            <el-select v-model="formData.processConfig.postprocess.wiki.granularity" placeholder="默认标准（standard）" clearable style="width: 100%">
+              <el-option label="精简（focused）— 仅文档主要主题，约 3-7 项" value="focused" />
+              <el-option label="标准（standard）— 主题 + 被实质性讨论的实体/概念" value="standard" />
+              <el-option label="详尽（exhaustive）— 穷举所有命名事物与公认概念" value="exhaustive" />
+            </el-select>
+            <span class="process-config-tip">粒度越高，模型调用次数与生成的 Wiki 页面越多</span>
+          </el-form-item>
+          <el-form-item v-if="formData.processConfig.postprocess.wiki_enabled" label="引文批大小(rune)">
+            <el-input-number v-model="formData.processConfig.postprocess.wiki.citation_batch_runes" :min="1000" :max="100000" :step="1000" controls-position="right" style="width: 100%" placeholder="默认 12000" />
+            <span class="process-config-tip">单次分块引文请求的文本上限，越大调用越少但单次越慢</span>
+          </el-form-item>
+          <el-form-item v-if="formData.processConfig.postprocess.wiki_enabled" label="引文并发数">
+            <el-input-number v-model="formData.processConfig.postprocess.wiki.citation_concurrency" :min="1" :max="16" :step="1" controls-position="right" style="width: 100%" placeholder="默认 4" />
+            <span class="process-config-tip">同一文档分块引文的并行请求数</span>
+          </el-form-item>
+          <el-form-item v-if="formData.processConfig.postprocess.wiki_enabled" label="页面生成并发">
+            <el-input-number v-model="formData.processConfig.postprocess.wiki.reduce_concurrency" :min="1" :max="32" :step="1" controls-position="right" style="width: 100%" placeholder="默认 10" />
+            <span class="process-config-tip">同一文档各实体/概念页并行生成的请求数</span>
+          </el-form-item>
           <div class="process-config-hint">各开关独立勾选；缺模型/未部署依赖时该阶段自动跳过，不阻塞入库</div>
         </el-collapse-item>
       </el-collapse>
@@ -332,14 +352,13 @@ const formData = ref({
   status: 0,
   isPublic: 0,
   isProject: 0,
-  imageStrategy: '',
   shareDeptIds: [],
   processConfig: {
-    chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, context_header: false },
+    chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, image_strategy: '', context_header: false },
     retrieval: { top_k: undefined, search_type: '', use_parallel: undefined, score_threshold: undefined, vector_weight: undefined, keyword_weight: undefined, parallel_workers: undefined, parallel_timeout: undefined },
     rerank: { enabled: undefined, timeout: undefined, top_k: undefined },
     model: { embedding_model_uid: '', rerank_model_uid: '' },
-    postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false }
+    postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false, wiki: { granularity: '', citation_batch_runes: undefined, citation_concurrency: undefined, reduce_concurrency: undefined } }
   }
 })
 const formRules = reactive({
@@ -894,14 +913,13 @@ const resetForm = () => {
     status: 0,
     isPublic: 0,
     isProject: 0,
-    imageStrategy: '',
     shareDeptIds: [],
     processConfig: {
-      chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, context_header: false },
+      chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, image_strategy: '', context_header: false },
       retrieval: { top_k: undefined, search_type: '', use_parallel: undefined, score_threshold: undefined, vector_weight: undefined, keyword_weight: undefined, parallel_workers: undefined, parallel_timeout: undefined },
       rerank: { enabled: undefined, timeout: undefined, top_k: undefined },
       model: { embedding_model_uid: '', rerank_model_uid: '' },
-      postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false }
+      postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false, wiki: { granularity: '', citation_batch_runes: undefined, citation_concurrency: undefined, reduce_concurrency: undefined } }
     }
   }
   selectedLevelName.value = ''
@@ -919,11 +937,11 @@ const resetForm = () => {
  */
 const mergeProcessConfig = (remote?: Record<string, any>) => {
   const base = {
-    chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, context_header: false },
+    chunking: { strategy: '', chunk_size: undefined, chunk_overlap: undefined, min_chunk_size: undefined, max_chunk_size: undefined, parent_chunk_size: undefined, child_chunk_size: undefined, child_chunk_overlap: undefined, image_strategy: '', context_header: false },
     retrieval: { top_k: undefined, search_type: '', use_parallel: undefined, score_threshold: undefined, vector_weight: undefined, keyword_weight: undefined, parallel_workers: undefined, parallel_timeout: undefined },
     rerank: { enabled: undefined, timeout: undefined, top_k: undefined },
     model: { embedding_model_uid: '', rerank_model_uid: '' },
-    postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false }
+    postprocess: { question_enabled: false, summary_enabled: false, graph_enabled: false, extract_enabled: false, wiki_enabled: false, wiki: { granularity: '', citation_batch_runes: undefined, citation_concurrency: undefined, reduce_concurrency: undefined } }
   }
   const src = remote || {}
   ;(Object.keys(base) as Array<keyof typeof base>).forEach((group) => {
@@ -936,26 +954,27 @@ const mergeProcessConfig = (remote?: Record<string, any>) => {
 }
 
 /**
- * 提交前清理 processConfig：递归移除 undefined / null / '' ，
+ * 提交前清理 processConfig：递归移除 undefined / null / ''，
  * 仅保留用户显式设置的值，避免空值覆盖租户级默认配置。
- * 空分组也一并移除。
+ * 空分组/空嵌套对象一并移除（如 postprocess.wiki 仅剩空粒度时整块不提交）。
  */
 const sanitizeProcessConfig = (cfg: Record<string, any> | undefined): Record<string, any> | undefined => {
   if (!cfg) return undefined
-  const result: Record<string, any> = {}
-  Object.keys(cfg).forEach((group) => {
-    const groupObj = cfg[group]
-    if (!groupObj || typeof groupObj !== 'object') return
-    const cleaned: Record<string, any> = {}
-    Object.keys(groupObj).forEach((key) => {
-      const v = groupObj[key]
+  const clean = (obj: Record<string, any>): Record<string, any> => {
+    const out: Record<string, any> = {}
+    Object.keys(obj).forEach((key) => {
+      const v = obj[key]
       if (v === undefined || v === null || v === '') return
-      cleaned[key] = v
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        const nested = clean(v)
+        if (Object.keys(nested).length > 0) out[key] = nested
+        return
+      }
+      out[key] = v
     })
-    if (Object.keys(cleaned).length > 0) {
-      result[group] = cleaned
-    }
-  })
+    return out
+  }
+  const result = clean(cfg)
   return Object.keys(result).length > 0 ? result : undefined
 }
 </script>

@@ -47,6 +47,30 @@ export interface ActiveModel {
   agentId?: string
 }
 
+/** 模型池中的模型项 */
+export interface PoolModel {
+  id: string
+  name: string
+  supportsMultimodal?: boolean
+  supportsImage?: boolean
+  supportsVideo?: boolean
+  isFree?: boolean
+  source?: string
+  /** 是否已选中（进入可选 models） */
+  selected?: boolean
+}
+
+/** 模型池分页结果 */
+export interface ModelPoolPage {
+  models: PoolModel[]
+  total: number
+  selectedCount: number
+  candidateCount: number
+  families: string[]
+  offset: number
+  limit: number
+}
+
 /** 模型管理 API */
 export const ModelApi = {
   /** 列出所有 Provider（含模型列表） */
@@ -78,6 +102,24 @@ export const ModelApi = {
   /** 从 Provider 发现可用模型 */
   discoverModels: (providerId: string) => {
     return request.post({ url: '/ai-agent/model/provider/discover', params: { providerId } })
+  },
+
+  /** 分页查询模型池（发现目录 / 已选模型） */
+  getModelPool: (
+    providerId: string,
+    params?: { offset?: number; limit?: number; tab?: string; search?: string }
+  ) => {
+    return request.get({ url: '/ai-agent/model/provider/pool', params: { providerId, ...params } })
+  },
+
+  /** 选择/取消选择模型池中的某个模型（写入/移出可用模型） */
+  updateModelPool: (providerId: string, modelId: string, selected: boolean) => {
+    return request.put({ url: '/ai-agent/model/model/pool', params: { providerId, modelId, selected } })
+  },
+
+  /** 批量选择/取消选择整个模型池 */
+  selectAllModels: (providerId: string, selected: boolean) => {
+    return request.put({ url: '/ai-agent/model/provider/pool/selection', params: { providerId, selected } })
   },
 
   /** 添加模型 */

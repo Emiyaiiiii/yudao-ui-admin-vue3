@@ -20,6 +20,49 @@
           <Icon icon="ep:warning" class="mr-3px" /> 待修复问题
         </el-button>
       </el-badge>
+      <!-- 收尾重建：死链清理 + 交叉链接 + 入链重建 + index 兜底（纯算法，不含 LLM） -->
+      <el-button
+        size="small"
+        plain
+        :loading="rebuilding"
+        @click="handleRebuildLinks"
+        v-hasPermi="['kb:document:update']"
+      >
+        <Icon icon="ep:refresh" class="mr-3px" /> 重建链接
+      </el-button>
+      <!-- 质量检查 / 自动修复（lint 纯算法，不含 LLM） -->
+      <el-button
+        size="small"
+        plain
+        :loading="linting"
+        @click="handleLint"
+        v-hasPermi="['kb:document:query']"
+      >
+        <Icon icon="ep:first-aid-kit" class="mr-3px" /> 质量检查
+      </el-button>
+      <el-button
+        size="small"
+        plain
+        :loading="autoFixing"
+        @click="handleAutoFix"
+        v-hasPermi="['kb:document:update']"
+      >
+        <Icon icon="ep:magic-stick" class="mr-3px" /> 自动修复
+      </el-button>
+      <!-- 独立目录实体：新建目录（P1-1） -->
+      <el-button
+        size="small"
+        plain
+        @click="handleCreateFolder"
+        v-hasPermi="['kb:document:update']"
+      >
+        <Icon icon="ep:folder-add" class="mr-3px" /> 新建目录
+      </el-button>
+      <!-- 蒸馏进度（阶段② 攒批：显示批次状态与待处理文档数） -->
+      <el-button size="small" plain :loading="batchLoading" @click="handleBatchProgress"
+                 v-hasPermi="['kb:document:query']">
+        <Icon icon="ep:loading" class="mr-3px" /> 蒸馏进度
+      </el-button>
     </div>
 
     <div class="wiki-body">
@@ -102,6 +145,34 @@
                     >
                       {{ data.pageCount }}
                     </el-tag>
+                    <!-- 目录 / 页面操作菜单（悬浮显示；写操作需 kb:document:update） -->
+                    <span
+                      v-hasPermi="['kb:document:update']"
+                      class="tree-node-menu"
+                      @click.stop
+                    >
+                      <el-dropdown trigger="click">
+                        <Icon icon="ep:more" class="node-more" />
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <template v-if="data.type === 'folder'">
+                              <el-dropdown-item @click="handleRenameFolder(data)">
+                                重命名
+                              </el-dropdown-item>
+                              <el-dropdown-item @click="handleMoveFolder(data)">
+                                移动到…
+                              </el-dropdown-item>
+                              <el-dropdown-item divided @click="handleDeleteFolder(data)">
+                                删除
+                              </el-dropdown-item>
+                            </template>
+                            <el-dropdown-item v-else @click="handleMovePage(data)">
+                              移动到目录…
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                    </span>
                   </span>
                 </template>
               </el-tree>
@@ -343,6 +414,48 @@
         <el-empty v-if="!issues.length" description="暂无待修复问题" :image-size="60" />
       </div>
     </el-drawer>
+
+    <!-- 移动目录对话框（目标父目录已排除自身及其子树） -->
+    <el-dialog v-model="folderMoveVisible" title="移动目录" width="420px" append-to-body>
+      <div class="move-dialog-tip">选择目标父目录（已排除自身及其子树）</div>
+      <el-tree-select
+        v-model="folderMoveParent"
+        :data="folderMoveSelectData"
+        :props="{ label: 'label', children: 'children' }"
+        value-key="value"
+        check-strictly
+        default-expand-all
+        placeholder="请选择目标父目录"
+        style="width: 100%"
+      />
+      <template #footer>
+        <el-button @click="folderMoveVisible = false">取消</el-button>
+        <el-button type="primary" :loading="folderMoveLoading" @click="confirmMoveFolder">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 移动页面对话框（folderId 为空 = 根目录，用「根目录」选项表示） -->
+    <el-dialog v-model="pageMoveVisible" title="移动页面到目录" width="420px" append-to-body>
+      <div class="move-dialog-tip">页面「{{ pageMoveTitle }}」将移动到：</div>
+      <el-tree-select
+        v-model="pageMoveFolder"
+        :data="pageMoveSelectData"
+        :props="{ label: 'label', children: 'children' }"
+        value-key="value"
+        check-strictly
+        default-expand-all
+        placeholder="请选择目标目录"
+        style="width: 100%"
+      />
+      <template #footer>
+        <el-button @click="pageMoveVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pageMoveLoading" @click="confirmMovePage">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup lang="ts">
@@ -354,6 +467,7 @@ import WikiBriefContent from './WikiBriefContent.vue'
 import WikiEditDialog from './WikiEditDialog.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import { useVectorTaskWs } from '@/views/kb/document/useVectorTaskWs'
+import { ElMessageBox } from 'element-plus'
 
 defineOptions({ name: 'WikiBrowser' })
 
@@ -390,11 +504,17 @@ interface TreeNode {
   pageCount?: number
   page?: WikiPageVO
   children?: TreeNode[]
+  /** 目录实体字段（buildKnowledgeTree 由 folderTree 实体构建时填充；页面节点无） */
+  folderId?: string
+  parentId?: string
+  path?: string[]
 }
 
 const loading = ref(false)
 const pages = ref<WikiPageVO[]>([])
 const folders = ref<WikiFolderVO[]>([])
+/** 目录实体树（folderTree 实体，含空目录；作为 knowledgeTree 目录节点的数据源） */
+const folderEntityTree = ref<any[]>([])
 const sideTab = ref<'summary' | 'knowledge'>('summary')
 
 /** 摘要分栏：page_type=summary 的页面（标题=文档名） */
@@ -419,12 +539,15 @@ const switchSideTab = (t: 'summary' | 'knowledge') => {
 const loadTree = async () => {
   loading.value = true
   try {
-    const [pageList, folderList] = await Promise.all([
+    const [pageList, folderList, folderEntity] = await Promise.all([
       WikiApi.listPages(props.kbId),
-      WikiApi.listFolders(props.kbId)
+      WikiApi.listFolders(props.kbId),
+      // 目录实体树：失败降级为空数组 → buildKnowledgeTree 回退旧「页面派生 path」构建
+      WikiApi.folderTree(props.kbId).catch(() => [])
     ])
     pages.value = pageList
     folders.value = folderList
+    folderEntityTree.value = folderEntity || []
     buildKnowledgeTree()
   } catch {
     knowledgeTree.value = []
@@ -433,70 +556,100 @@ const loadTree = async () => {
   }
 }
 
-/** 知识树：按目录 path 逐级建文件夹 + 挂载 entity/concept 页（页面在 ES 后按 folder_path/categoryPath） */
+/**
+ * 知识树：**优先用目录实体树**（folderTree，含空目录、带 folder_id）建目录节点，
+ * 再按页面的 folderId 挂载 entity/concept 页。
+ * 兼容：目录实体尚未生成的存量库（folderEntityTree 为空）回退旧的「页面派生 folder_path」构建。
+ */
 const buildKnowledgeTree = () => {
   const folderNodeByKey = new Map<string, TreeNode>()
+  const folderNodeById = new Map<string, TreeNode>()
   const rootFolders: TreeNode[] = []
-  const ensureFolder = (key: string, parentKey: string): TreeNode => {
-    let node = folderNodeByKey.get(key)
-    if (!node) {
-      const seg = (key.split('/').pop() || key) as string
-      node = { key, type: 'folder', label: seg, pageCount: 0, children: [] }
-      folderNodeByKey.set(key, node)
-      if (parentKey) {
-        // 子文件夹挂到父文件夹节点的 children（此前仅记入 childrenOf 映射、父节点 children 未填充，
-        // 导致"技术实体/职业概念"这类根文件夹展开后为空）
-        const parent = folderNodeByKey.get(parentKey)
-        if (parent) parent.children!.push(node)
-      } else {
-        rootFolders.push(node)
-      }
+
+  // 1. 目录：优先目录实体树（递归，保留空目录）
+  const walkEntity = (entity: any, parentNode?: TreeNode) => {
+    const pathArr: string[] = Array.isArray(entity.path)
+      ? entity.path.map((s: any) => String(s))
+      : String(entity.path || '').split('/').filter(Boolean)
+    const key = pathArr.join('/')
+    if (!key) return
+    const node: TreeNode = {
+      key,
+      type: 'folder',
+      label: String(entity.name || pathArr[pathArr.length - 1] || key),
+      pageCount: Number(entity.count || 0),
+      children: [],
+      folderId: String(entity.folder_id ?? entity.id ?? ''),
+      parentId: String(entity.parent_id ?? ''),
+      path: pathArr
     }
-    return node
+    folderNodeByKey.set(key, node)
+    if (node.folderId) folderNodeById.set(node.folderId, node)
+    if (parentNode) parentNode.children!.push(node)
+    else rootFolders.push(node)
+    for (const child of entity.children || []) walkEntity(child, node)
   }
-  // 1. 目录：path 数组逐级建链
-  folders.value.forEach((f) => {
-    const segs = Array.isArray(f.path)
-      ? (f.path as string[])
-      : String(f.path || '').split('/').filter(Boolean)
-    let parentKey = ''
-    let key = ''
-    for (const seg of segs) {
-      key = key ? `${key}/${seg}` : seg
-      ensureFolder(key, parentKey)
-      parentKey = key
-    }
-    if (key && f.pageCount != null) {
-      const node = folderNodeByKey.get(key)
-      if (node) node.pageCount = f.pageCount
-    }
-  })
-  // 2. 挂页面到目录（categoryPath = folder_path JSON 数组）；无目录挂根
+
+  if (folderEntityTree.value.length) {
+    folderEntityTree.value.forEach((e) => walkEntity(e))
+  } else {
+    // 回退：按页面派生 folder_path 逐级建链（存量库无目录实体时保持原行为）
+    folders.value.forEach((f) => {
+      const segs = Array.isArray(f.path)
+        ? (f.path as string[])
+        : String(f.path || '').split('/').filter(Boolean)
+      let parentKey = ''
+      let key = ''
+      for (const seg of segs) {
+        key = key ? `${key}/${seg}` : seg
+        if (!folderNodeByKey.has(key)) {
+          const node: TreeNode = { key, type: 'folder', label: seg, pageCount: 0, children: [], path: key.split('/') }
+          folderNodeByKey.set(key, node)
+          if (parentKey) {
+            const parent = folderNodeByKey.get(parentKey)
+            if (parent) parent.children!.push(node)
+            else rootFolders.push(node)
+          } else {
+            rootFolders.push(node)
+          }
+        }
+        parentKey = key
+      }
+      if (key && f.pageCount != null) {
+        const node = folderNodeByKey.get(key)
+        if (node) node.pageCount = f.pageCount
+      }
+    })
+  }
+
+  // 2. 挂页面：优先按 folderId 命中目录实体；回退 categoryPath 路径命中；都无则挂根
   const rootPages: TreeNode[] = []
   knowledgePages.value.forEach((p) => {
-    let segs: string[] = []
-    try {
-      segs = JSON.parse(p.categoryPath || '[]')
-    } catch {
-      segs = []
-    }
-    if (!Array.isArray(segs)) segs = []
-    segs = segs.filter(Boolean)
     const pageNode: TreeNode = { key: `page-${p.slug}`, type: 'page', label: p.title, page: p, children: [] }
-    if (segs.length) {
-      const folderNode = folderNodeByKey.get(segs.join('/'))
-      if (folderNode) {
-        folderNode.children!.push(pageNode)
-      } else {
-        rootPages.push(pageNode)
+    let folderNode: TreeNode | undefined
+    if (p.folderId != null && String(p.folderId) !== '') {
+      folderNode = folderNodeById.get(String(p.folderId))
+    }
+    if (!folderNode) {
+      let segs: string[] = []
+      try {
+        segs = JSON.parse(p.categoryPath || '[]')
+      } catch {
+        segs = []
       }
+      if (!Array.isArray(segs)) segs = []
+      segs = segs.filter(Boolean)
+      if (segs.length) folderNode = folderNodeByKey.get(segs.join('/'))
+    }
+    if (folderNode) {
+      folderNode.children!.push(pageNode)
     } else {
       rootPages.push(pageNode)
     }
   })
-  // 3. 根：文件树 + 根目录页
-  const root: TreeNode[] = [...rootFolders, ...rootPages]
-  knowledgeTree.value = root
+
+  // 3. 根：目录树 + 根目录页
+  knowledgeTree.value = [...rootFolders, ...rootPages]
   // 异步数据下 default-expand-all 不生效：数据就绪后手动展开全部文件夹（默认展开便于浏览）
   nextTick(() => {
     treeRef.value?.store?.expandAll?.()
@@ -1066,6 +1219,312 @@ const issuesVisible = ref(false)
 const issues = ref<WikiIssueVO[]>([])
 const pendingIssueCount = ref(0)
 
+/** 重建链接进行中标记 */
+const rebuilding = ref(false)
+
+/** 收尾重建：死链清理 + 交叉链接 + 入链重建 + index 兜底（python 纯算法，不调 LLM） */
+async function handleRebuildLinks() {
+  if (!props.kbId) return
+  rebuilding.value = true
+  try {
+    const stat = await WikiApi.rebuildLinks(props.kbId)
+    message.success(
+      `重建完成：清理死链 ${stat?.dead_removed ?? 0} · 补交叉链 ${stat?.cross_added ?? 0} · 重建入链 ${stat?.relinked ?? 0}`
+    )
+  } catch (e) {
+    message.error('重建链接失败')
+  } finally {
+    rebuilding.value = false
+  }
+}
+
+/** 质量检查进行中标记 */
+const linting = ref(false)
+/** 自动修复进行中标记 */
+const autoFixing = ref(false)
+
+/** Wiki 质量检查（lint）：展示健康分与问题统计 */
+async function handleLint() {
+  if (!props.kbId) return
+  linting.value = true
+  try {
+    const r = await WikiApi.lint(props.kbId)
+    const c = r?.counts || {}
+    message.success(
+      `健康分 ${r?.health_score ?? '-'}/100：共 ${c.total ?? 0} 个问题（${c.error ?? 0} 错误 / ${c.warning ?? 0} 警告 / ${c.info ?? 0} 建议）`
+    )
+  } catch (e) {
+    message.error('质量检查失败')
+  } finally {
+    linting.value = false
+  }
+}
+
+/** 自动修复可修项（死链 / 空内容 / 失效来源），修完自动重建入链 */
+async function handleAutoFix() {
+  if (!props.kbId) return
+  autoFixing.value = true
+  try {
+    const r = await WikiApi.autoFix(props.kbId)
+    const d = r?.details || {}
+    message.success(
+      `已修复 ${r?.fixed ?? 0} 项：死链 ${d.broken_link ?? 0} · 空内容 ${d.empty_content ?? 0} · 失效来源 ${d.stale_ref ?? 0} · 删页 ${d.deleted_page ?? 0}`
+    )
+  } catch (e) {
+    message.error('自动修复失败')
+  } finally {
+    autoFixing.value = false
+  }
+}
+
+/** 攒批进度进行中标记 */
+const batchLoading = ref(false)
+
+/** Wiki 蒸馏进度（阶段② 攒批：批次状态 + 待处理文档数） */
+async function handleBatchProgress() {
+  if (!props.kbId) return
+  batchLoading.value = true
+  try {
+    const r = await WikiApi.getBatchLatest(props.kbId)
+    const st = r?.state || {}
+    const pending = r?.pending ?? 0
+    if (!r?.batch_id) {
+      message.info(`暂无蒸馏批次；待处理文档 ${pending} 篇`)
+      return
+    }
+    const metrics = st.metrics || {}
+    message.info(
+      `最近批次 ${st.status || '-'}（${st.progress ?? 0}%）：${st.step || '-'}；` +
+      `文档 ${metrics.docs ?? '-'} 篇 · 生成 ${metrics.pages ?? '-'} 页 · 待处理 ${pending} 篇`
+    )
+  } catch (e) {
+    message.error('获取蒸馏进度失败')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+/** 新建目录（当前建在根目录下；目录名不得含分隔符） */
+async function handleCreateFolder() {
+  if (!props.kbId) return
+  try {
+    const { value } = await ElMessageBox.prompt('请输入目录名称', '新建目录', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /^[^/｜|／]+$/,
+      inputErrorMessage: '目录名不得为空或含分隔符'
+    })
+    const name = (value || '').trim()
+    if (!name) return
+    await WikiApi.createFolder(props.kbId, name, '')
+    message.success('目录已创建')
+    await loadTree()
+  } catch (e) {
+    // 用户取消或创建失败（失败由请求拦截提示）
+  }
+}
+
+// ========== 目录 / 页面 操作（重命名 / 移动 / 删除） ==========
+/** el-tree-select 的「根目录」哨兵值（API 约定：空串 = 根） */
+const ROOT_FOLDER_VALUE = '__root__'
+
+interface FolderSelectNode {
+  value: string
+  label: string
+  children?: FolderSelectNode[]
+}
+
+/** 目录实体索引（folder_id → 实体），源自 folderEntityTree 缓存，避免每次操作重复请求后端 */
+const folderEntityById = computed<Map<string, any>>(() => {
+  const map = new Map<string, any>()
+  const walk = (nodes: any[]) => {
+    for (const n of nodes || []) {
+      const id = String(n?.folder_id ?? n?.id ?? '')
+      if (id) map.set(id, n)
+      walk(n?.children || [])
+    }
+  }
+  walk(folderEntityTree.value)
+  return map
+})
+
+/** 目录实体索引（物化 path → 实体），用于无 folderId 的旧节点回退匹配 */
+const folderEntityByPath = computed<Map<string, any>>(() => {
+  const map = new Map<string, any>()
+  const walk = (nodes: any[]) => {
+    for (const n of nodes || []) {
+      const p = Array.isArray(n?.path) ? n.path.join('/') : String(n?.path || '')
+      if (p) map.set(p, n)
+      walk(n?.children || [])
+    }
+  }
+  walk(folderEntityTree.value)
+  return map
+})
+
+/** 收集目录自身及整棵子树的 folder_id（移动目录时需排除，避免移入自身子树） */
+const collectFolderIds = (node: any, acc: Set<string>) => {
+  const id = String(node?.folder_id ?? node?.id ?? '')
+  if (id) acc.add(id)
+  for (const c of node?.children || []) collectFolderIds(c, acc)
+}
+
+/** 目录实体树 → el-tree-select 数据（可排除指定 folder_id 集合） */
+const toFolderSelectData = (nodes: any[], exclude?: Set<string>): FolderSelectNode[] => {
+  const out: FolderSelectNode[] = []
+  for (const n of nodes || []) {
+    const id = String(n.folder_id ?? n.id ?? '')
+    if (exclude?.has(id)) continue
+    out.push({ value: id, label: String(n.name || ''), children: toFolderSelectData(n.children || [], exclude) })
+  }
+  return out
+}
+
+/** 把知识树目录节点解析成目录实体；优先用节点自带 folderId（免请求），失败给出提示并返回 null */
+const resolveFolderEntity = (node: TreeNode): any | null => {
+  const byId = node.folderId ? folderEntityById.value.get(node.folderId) : undefined
+  if (byId) return byId
+  const byPath = folderEntityByPath.value.get(node.key)
+  if (byPath) return byPath
+  message.warning('该目录暂无对应目录实体，无法管理（上传文档重新入库后可用）')
+  return null
+}
+
+/** 重命名目录 */
+const handleRenameFolder = async (node: TreeNode) => {
+  const folder = resolveFolderEntity(node)
+  if (!folder) return
+  let name = ''
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的目录名称', '重命名目录', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: String(folder.name || ''),
+      inputPattern: /^[^/｜|／]+$/,
+      inputErrorMessage: '目录名不得为空或含分隔符'
+    })
+    name = (value || '').trim()
+  } catch {
+    return // 用户取消，不报错
+  }
+  if (!name || name === folder.name) return
+  try {
+    await WikiApi.renameFolder(props.kbId, String(folder.folder_id), name)
+    message.success('目录已重命名')
+    await loadTree()
+  } catch {
+    // 失败由请求拦截统一提示
+  }
+}
+
+/** 删除目录（连同整棵子树；子树内页面归位到根目录） */
+const handleDeleteFolder = async (node: TreeNode) => {
+  const folder = resolveFolderEntity(node)
+  if (!folder) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除目录「${folder.name}」及其全部子目录？该目录子树内页面将归位到根目录。`,
+      '删除目录',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户取消，不报错
+  }
+  try {
+    await WikiApi.deleteFolder(props.kbId, String(folder.folder_id))
+    message.success('目录已删除')
+    await loadTree()
+  } catch {
+    // 失败由请求拦截统一提示
+  }
+}
+
+// ---------- 移动目录 ----------
+const folderMoveVisible = ref(false)
+const folderMoveLoading = ref(false)
+const folderMoveTarget = ref<any | null>(null)
+const folderMoveParent = ref<string>(ROOT_FOLDER_VALUE)
+const folderMoveOptions = ref<FolderSelectNode[]>([])
+/** 下拉数据：根目录选项 + 过滤后的目录实体（已排除自身子树） */
+const folderMoveSelectData = computed<FolderSelectNode[]>(() => [
+  { value: ROOT_FOLDER_VALUE, label: '根目录' },
+  ...folderMoveOptions.value
+])
+
+/** 打开移动目录对话框（目标父级排除自身及子树；下拉数据取自组件内缓存，不再请求后端） */
+const handleMoveFolder = (node: TreeNode) => {
+  const folder = resolveFolderEntity(node)
+  if (!folder) return
+  const exclude = new Set<string>()
+  collectFolderIds(folder, exclude)
+  folderMoveOptions.value = toFolderSelectData(folderEntityTree.value, exclude)
+  folderMoveTarget.value = folder
+  // 当前父级：优先节点自带 parentId，回退实体字段
+  const parentId = String(node.parentId ?? folder.parent_id ?? '')
+  folderMoveParent.value = parentId || ROOT_FOLDER_VALUE
+  folderMoveVisible.value = true
+}
+
+const confirmMoveFolder = async () => {
+  const folder = folderMoveTarget.value
+  if (!folder || !props.kbId) return
+  folderMoveLoading.value = true
+  try {
+    const parentId = folderMoveParent.value === ROOT_FOLDER_VALUE ? '' : (folderMoveParent.value || '')
+    await WikiApi.moveFolder(props.kbId, String(folder.folder_id), parentId)
+    message.success('目录已移动')
+    folderMoveVisible.value = false
+    await loadTree()
+  } catch {
+    // 失败由请求拦截统一提示
+  } finally {
+    folderMoveLoading.value = false
+  }
+}
+
+// ---------- 移动页面 ----------
+const pageMoveVisible = ref(false)
+const pageMoveLoading = ref(false)
+const pageMoveSlug = ref('')
+const pageMoveTitle = ref('')
+const pageMoveFolder = ref<string>(ROOT_FOLDER_VALUE)
+const pageMoveOptions = ref<FolderSelectNode[]>([])
+const pageMoveSelectData = computed<FolderSelectNode[]>(() => [
+  { value: ROOT_FOLDER_VALUE, label: '根目录' },
+  ...pageMoveOptions.value
+])
+
+/** 打开移动页面对话框（目录下拉取自组件内缓存；无目录实体时提示后返回） */
+const handleMovePage = (node: TreeNode) => {
+  const page = node.page
+  if (!page || !props.kbId) return
+  if (!folderEntityTree.value.length) {
+    message.warning('尚无目录实体，请先新建目录（或上传文档重新入库生成）后再整理')
+    return
+  }
+  pageMoveOptions.value = toFolderSelectData(folderEntityTree.value)
+  pageMoveSlug.value = page.slug
+  pageMoveTitle.value = page.title
+  pageMoveFolder.value = page.folderId ? String(page.folderId) : ROOT_FOLDER_VALUE
+  pageMoveVisible.value = true
+}
+
+const confirmMovePage = async () => {
+  if (!pageMoveSlug.value || !props.kbId) return
+  pageMoveLoading.value = true
+  try {
+    const folderId = pageMoveFolder.value === ROOT_FOLDER_VALUE ? '' : (pageMoveFolder.value || '')
+    await WikiApi.movePage(props.kbId, pageMoveSlug.value, folderId)
+    message.success('页面已移动')
+    pageMoveVisible.value = false
+    await loadTree()
+  } catch {
+    // 失败由请求拦截统一提示
+  } finally {
+    pageMoveLoading.value = false
+  }
+}
+
 const loadPendingIssueCount = async () => {
   try {
     const list = await WikiApi.listIssues(props.kbId, undefined, 'pending')
@@ -1080,6 +1539,7 @@ watch(
   () => {
     pages.value = []
     folders.value = []
+    folderEntityTree.value = []
     knowledgeTree.value = []
     graph.value = { nodes: [], edges: [], meta: { mode: 'overview', total: 0, returned: 0, truncated: false } }
     graphReady.value = false
@@ -1264,6 +1724,29 @@ const aiReporterText = (r?: string) => {
 }
 .wiki-side-tree {
   min-height: 100px;
+}
+/* 树节点操作菜单：默认隐藏，节点悬浮时显示 */
+.tree-node-menu {
+  margin-left: 6px;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tree-node:hover .tree-node-menu {
+  opacity: 1;
+}
+.node-more {
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  font-size: 14px;
+}
+.node-more:hover {
+  color: var(--el-color-primary);
+}
+.move-dialog-tip {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 .wiki-issue-badge {
   cursor: pointer;

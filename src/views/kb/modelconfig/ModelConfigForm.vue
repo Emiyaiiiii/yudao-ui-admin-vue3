@@ -64,6 +64,18 @@
           placeholder="请输入API密钥"
         />
       </el-form-item>
+      <el-form-item v-if="!isMineruMode" label="自动获取">
+        <div class="w-full flex items-center gap-8px">
+          <el-button type="primary" plain :loading="detecting" @click="handleDetectParams">
+            <Icon icon="ep:magic-stick" class="mr-4px" />获取模型参数
+          </el-button>
+          <span class="text-12px" style="color: var(--el-text-color-placeholder);">
+            {{ isEmbeddingMode
+              ? '根据 API 地址 / 密钥 / 模型名自动识别并填入向量维度'
+              : '根据 API 地址 / 密钥 / 模型名，从 OpenAI 兼容接口自动识别并填入最大Token、上下文长度、多模态、思考能力等参数' }}
+          </span>
+        </div>
+      </el-form-item>
       <el-row :gutter="20">
         <el-col :span="12">
           <el-form-item label="排序顺序">
@@ -92,7 +104,7 @@
           show-word-limit
         />
       </el-form-item>
-      <el-row :gutter="20">
+      <el-row v-if="!isEmbeddingMode" :gutter="20">
         <el-col :span="12">
           <el-form-item label="最大Token数">
             <el-input-number
@@ -114,7 +126,20 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-row :gutter="20">
+      <el-form-item v-if="isEmbeddingMode" label="向量维度" prop="dimension">
+        <el-input-number
+          v-model="formData.dimension"
+          :min="1"
+          :max="1000000"
+          class="w-full"
+          :placeholder="detecting ? '探测中...' : '点击「获取模型参数」自动识别'"
+        />
+        <div v-if="isEmbeddingMode" class="w-full text-12px" style="color: var(--el-text-color-placeholder); margin-top: 4px;">
+          Embedding 模型的向量维度，将由「获取模型参数」自动探测回填；也可手动指定。
+          聚合向量库要求不同知识库所用 embedding 模型维度一致，否则入库会报维度不匹配。
+        </div>
+      </el-form-item>
+      <el-row v-if="!isEmbeddingMode" :gutter="20">
         <el-col :span="12">
           <el-form-item label="温度参数">
             <el-slider
@@ -138,7 +163,7 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="启用思考能力">
+      <el-form-item v-if="!isEmbeddingMode" label="启用思考能力">
         <el-switch
           v-model="formData.thinkingEnabledBool"
           active-text="启用"
@@ -155,6 +180,12 @@
           :active-value="1"
           :inactive-value="0"
         />
+      </el-form-item>
+      <el-form-item v-if="formData.modelType === 'ocr'" label="OCR 通道">
+        <el-select v-model="formData.ocrKind" class="w-full">
+          <el-option label="DeepSeek OCR（逐图文字识别，默认）" value="deepseek_ocr" />
+          <el-option label="MinerU（整篇版式解析，历史兼容）" value="mineru" />
+        </el-select>
       </el-form-item>
       <template v-if="formData.modelType === 'mineru'">
         <el-form-item label="接入方式">
@@ -179,14 +210,22 @@
           </el-select>
         </el-form-item>
       </template>
-      <el-form-item label="配置参数(JSON)">
-        <el-input
-          v-model="formData.configStr"
-          type="textarea"
-          placeholder='{"provider": "openai", "stream": true}'
-          :rows="3"
-        />
-      </el-form-item>
+      <el-collapse v-model="advancedCollapse" class="config-advanced">
+        <el-collapse-item name="advanced" title="进阶配置（可选）">
+          <div class="config-advanced-hint">
+            上方表单已覆盖最大Token、上下文长度、温度、Top-P、思考能力、多模态等常用参数，此处无需重复配置；仅当需要
+            provider、adapter、dimensions 等扩展参数时在此补充 JSON，留空即可。
+          </div>
+          <el-form-item label="配置参数(JSON)">
+            <el-input
+              v-model="formData.configStr"
+              type="textarea"
+              placeholder='{"provider": "openai", "stream": true}'
+              :rows="3"
+            />
+          </el-form-item>
+        </el-collapse-item>
+      </el-collapse>
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false" :disabled="formLoading">取消</el-button>
@@ -212,6 +251,8 @@ const dialogVisible = ref(false)
 const formLoading = ref(false)
 const formType = ref<'create' | 'update'>('create')
 const formRef = ref()
+const detecting = ref(false)
+const advancedCollapse = ref<string[]>([])
 
 const dialogTitle = computed(() => {
   return formType.value === 'create' ? '创建模型配置' : '编辑模型配置'
@@ -219,6 +260,8 @@ const dialogTitle = computed(() => {
 
 // MinerU 专用模式：独立分类 modelType=mineru（文档解析通道，非 OCR），隐藏 uid/name，渲染专用字段
 const isMineruMode = computed(() => formData.modelType === 'mineru')
+// Embedding 专用模式：隐藏 LLM 专属参数（最大Token/上下文/温度/Top-P/思考），只保留向量维度
+const isEmbeddingMode = computed(() => formData.modelType === 'embedding')
 
 const defaultFormData = () => ({
   id: undefined as number | undefined,
@@ -229,7 +272,7 @@ const defaultFormData = () => ({
   url: '',
   appkey: '',
   thinkingEnabledBool: 0,
-  vlSupportedBool: false,
+  vlSupportedBool: 0,
   ocrKind: 'deepseek_ocr',
   mineruMode: 'v4',
   mineruTier: 'flash',
@@ -238,6 +281,7 @@ const defaultFormData = () => ({
   description: '',
   maxTokens: 4096,
   contextLength: 8192,
+  dimension: undefined as number | undefined,
   temperature: 0.7,
   topP: 0.9,
   configStr: '{}',
@@ -331,12 +375,14 @@ const open = async (type: 'create' | 'update', row?: ModelConfig, initModelType?
       let mineruMode = 'v4'
       let mineruTier = 'flash'
       let mineruModelVersion = 'vlm'
+      let dimension
       try {
         const cfgObj = JSON.parse(data.config || '{}')
         if (cfgObj.ocr_kind) ocrKind = String(cfgObj.ocr_kind)
         if (cfgObj.mineru_mode) mineruMode = String(cfgObj.mineru_mode)
         if (cfgObj.mineru_tier) mineruTier = String(cfgObj.mineru_tier)
         if (cfgObj.mineru_model_version != null) mineruModelVersion = String(cfgObj.mineru_model_version)
+        if (cfgObj.dimensions != null) dimension = Number(cfgObj.dimensions)
       } catch (e) {
         // 忽略解析失败，沿用默认值
       }
@@ -349,7 +395,7 @@ const open = async (type: 'create' | 'update', row?: ModelConfig, initModelType?
         url: data.url,
         appkey: data.appkey,
         thinkingEnabledBool: data.thinkingEnabled || 0,
-        vlSupportedBool: !!data.vlSupported,
+        vlSupportedBool: data.vlSupported ? 1 : 0,
         ocrKind,
         mineruMode,
         mineruTier,
@@ -358,6 +404,8 @@ const open = async (type: 'create' | 'update', row?: ModelConfig, initModelType?
         description: data.description || '',
         maxTokens: data.maxTokens || 4096,
         contextLength: data.contextLength || 8192,
+        // embedding 维度：优先 config.dimensions；历史数据曾把维度错存在 maxTokens，据此回退
+        dimension: (data.modelType === 'embedding' && dimension == null && data.maxTokens) ? data.maxTokens : dimension,
         temperature: data.temperature || 0.7,
         topP: data.topP || 0.9,
         configStr: data.config || '{}',
@@ -372,6 +420,48 @@ const open = async (type: 'create' | 'update', row?: ModelConfig, initModelType?
 
 defineExpose({ open })
 
+// 清理误粘贴的反引号/引号（如 markdown 代码片段复制残留）
+const normalizeUrl = (url: string) => (url || '').trim().replace(/^[`'"]+|[`'"]+$/g, '')
+
+// 从 OpenAI 兼容接口自动获取模型参数并填入表单
+const handleDetectParams = async () => {
+  if (!formData.url) {
+    message.warning('请先填写 API 地址')
+    return
+  }
+  if (!formData.appkey) {
+    message.warning('请先填写 API 密钥')
+    return
+  }
+  if (!formData.model) {
+    message.warning('请先填写具体模型名')
+    return
+  }
+  detecting.value = true
+  try {
+    const res = await ModelConfigApi.detectParams({
+      url: normalizeUrl(formData.url),
+      appkey: formData.appkey,
+      model: formData.model,
+      modelType: formData.modelType
+    })
+    if (res.success) {
+      if (res.maxTokens != null) formData.maxTokens = res.maxTokens
+      if (res.contextLength != null) formData.contextLength = res.contextLength
+      if (res.dimensions != null) formData.dimension = res.dimensions
+      if (res.vlSupported != null) formData.vlSupportedBool = res.vlSupported ? 1 : 0
+      if (res.thinkingEnabled != null) formData.thinkingEnabledBool = res.thinkingEnabled ? 1 : 0
+      message.success(res.message || '已自动填入模型参数')
+    } else {
+      message.warning(res.message || '未能自动获取模型参数，可手动填写')
+    }
+  } catch {
+    message.error('参数获取请求失败')
+  } finally {
+    detecting.value = false
+  }
+}
+
 const submitForm = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
@@ -384,6 +474,16 @@ const submitForm = async () => {
       configObj = JSON.parse(formData.configStr || '{}')
     } catch (e) {
       configObj = {}
+    }
+    // Embedding 维度写入 config JSON 的 dimensions（供 python-vector 建集合并校验）
+    if (formData.modelType === 'embedding') {
+      if (formData.dimension != null) {
+        configObj.dimensions = formData.dimension
+      } else {
+        delete configObj.dimensions
+      }
+    } else {
+      delete configObj.dimensions
     }
     if (formData.modelType === 'mineru') {
       // MinerU 独立分类：config JSON 只写接入方式/档位(v1)/模型版本(v4)，不设 ocr_kind
@@ -417,10 +517,10 @@ const submitForm = async () => {
       model: isMineruMode.value ? 'mineru' : formData.model,
       modelType: formData.modelType,
       name: mineruName,
-      url: formData.url,
+      url: normalizeUrl(formData.url),
       appkey: formData.appkey,
       thinkingEnabled: formData.thinkingEnabledBool,
-      vlSupported: formData.vlSupportedBool,
+      vlSupported: !!formData.vlSupportedBool,
       isActive: formData.isActiveBool,
       description: formData.description,
       maxTokens: formData.maxTokens,
@@ -446,3 +546,29 @@ const submitForm = async () => {
   }
 }
 </script>
+
+<style scoped lang="scss">
+.config-advanced {
+  margin-bottom: 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+
+  :deep(.el-collapse-item__header) {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-extra-light);
+    padding-left: 12px;
+  }
+
+  :deep(.el-collapse-item__content) {
+    padding: 8px 12px 2px;
+  }
+
+  .config-advanced-hint {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-text-color-placeholder);
+    margin-bottom: 8px;
+  }
+}
+</style>

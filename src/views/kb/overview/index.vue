@@ -167,6 +167,7 @@
                   <!-- 处理中显示进度条 -->
                   <div v-if="showProgress(doc)" class="doc-vector-progress">
                     <el-progress
+                      v-if="!isPostprocessing(doc)"
                       :percentage="getProgress(doc.vectorTaskId) || 0"
                       :stroke-width="4"
                       :show-text="true"
@@ -321,6 +322,13 @@ const getVectorStatusType = (doc: any): string => {
 
 const showProgress = (doc: any): boolean => {
   return getVectorStatus(doc) === VectorTaskStatus.PROCESSING
+}
+
+const isPostprocessing = (doc: any): boolean => {
+  // 后处理阶段（step 以 postprocess/ 开头，如 postprocess/wiki）：入库已完成（进度 100），
+  // 不再显示百分比进度条，只显示「正在进行的后处理任务」文案
+  const step = getStep(doc.vectorTaskId) || ''
+  return step.startsWith('postprocess/')
 }
 
 const handleCancelVectorTask = async (doc: any) => {

@@ -44,6 +44,16 @@ const STAGE_LABELS: Record<string, string> = {
   embed: '向量化',
   store: '写入存储',
   postprocess: '后处理',
+  // 后处理各类（ingest/task.py 的 postprocess/{key}）
+  'postprocess/wiki': 'Wiki 蒸馏',
+  'postprocess/summary': '文档摘要',
+  'postprocess/extract': '问答对抽取',
+  'postprocess/question': '问题生成',
+  // Wiki 蒸馏子阶段（wiki.py 的 _wiki_stage）
+  'postprocess/wiki/extract': 'Wiki·候选抽取',
+  'postprocess/wiki/cite': 'Wiki·分块引文',
+  'postprocess/wiki/reduce': 'Wiki·页面生成',
+  'postprocess/wiki/finalize': 'Wiki·收尾建链',
   done: '完成'
 }
 const STATUS_LABELS: Record<string, string> = {
@@ -85,6 +95,19 @@ const stageMetricsText = (s: VectorTaskStage) => {
   if (m.es_indexed != null) parts.push(`ES ${m.es_indexed}`)
   if (m.strategy) parts.push(`策略 ${m.strategy}`)
   if (m.parser) parts.push(m.parser)
+  // Wiki 蒸馏子阶段指标（wiki.py 上报）
+  if (m.entities != null || m.concepts != null) {
+    parts.push(`${m.entities ?? 0} 实体 / ${m.concepts ?? 0} 概念`)
+  }
+  if (m.cited_slugs != null) parts.push(`${m.cited_slugs} 词条有引文`)
+  if (m.new_slugs != null) parts.push(`新增 ${m.new_slugs} 词条`)
+  if (m.citation_count != null) parts.push(`${m.citation_count} 条引文`)
+  if (m.chunks != null) parts.push(`${m.chunks} 分片`)
+  if (m.pages != null) parts.push(`${m.pages} 页面`)
+  if (m.folders_planned != null) parts.push(`${m.folders_planned} 目录`)
+  if (m.dead_removed != null) parts.push(`清理死链 ${m.dead_removed}`)
+  if (m.cross_added != null) parts.push(`补交叉链 ${m.cross_added}`)
+  if (m.relinked != null) parts.push(`重建入链 ${m.relinked}`)
   return parts.join(' · ')
 }
 </script>
