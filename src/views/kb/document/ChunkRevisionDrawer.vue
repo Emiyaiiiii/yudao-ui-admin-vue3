@@ -153,6 +153,10 @@ const selectRevision = (rev: number) => {
 
 const handleRevert = async () => {
   if (selectedRevision.value == null) return
+  if (!props.canEdit) {
+    message.error('您没有回滚切片的权限')
+    return
+  }
   try {
     await message.confirm(`确定回滚到版本 v${selectedRevision.value} 吗？当前内容将被替换。`)
     await ChunkApi.revertChunk({

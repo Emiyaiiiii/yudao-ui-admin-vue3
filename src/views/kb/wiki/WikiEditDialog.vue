@@ -50,7 +50,14 @@
       </div>
     </el-form>
     <template #footer>
-      <el-button :loading="submitLoading" type="primary" @click="handleSubmit">保 存</el-button>
+      <el-button
+        :loading="submitLoading"
+        type="primary"
+        :disabled="!canEdit"
+        @click="handleSubmit"
+      >
+        保 存
+      </el-button>
       <el-button @click="emit('update:visible', false)">取 消</el-button>
     </template>
   </el-dialog>
@@ -59,6 +66,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { FormInstance } from 'element-plus'
 import { WikiApi, type WikiPageVO } from '@/api/kb/wiki'
+import { checkPermi } from '@/utils/permission'
 
 defineOptions({ name: 'WikiEditDialog' })
 
@@ -77,6 +85,8 @@ const formRef = ref<FormInstance | null>(null)
 const submitLoading = ref(false)
 
 const isCreateMode = computed(() => !props.page)
+/** 新建/编辑均需 kb:document:update 权限 */
+const canEdit = computed(() => checkPermi(['kb:document:update']))
 
 const form = reactive({
   slug: '',
@@ -105,6 +115,10 @@ const handleOpen = () => {
 }
 
 const handleSubmit = async () => {
+  if (!canEdit.value) {
+    message.error('您没有编辑 Wiki 页面的权限')
+    return
+  }
   const valid = await formRef.value?.validate?.().catch(() => false)
   if (!valid) return
   if (!form.slug.trim() || !form.title.trim() || !form.content.trim()) {

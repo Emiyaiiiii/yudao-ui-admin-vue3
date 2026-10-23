@@ -82,6 +82,7 @@
       :doc-id="docId"
       :kb-id="kbId"
       :chunk="selected"
+      :user-can-edit="canEdit"
       @success="handleEditSuccess"
     />
     <!-- 修订历史抽屉 -->

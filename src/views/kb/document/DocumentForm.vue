@@ -98,7 +98,13 @@
       </template>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
+      <el-button
+        @click="submitForm"
+        type="primary"
+        :disabled="formLoading || !canSubmit"
+      >
+        确 定
+      </el-button>
       <el-button @click="dialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
@@ -109,6 +115,7 @@ import { DocumentApi, Document } from '@/api/kb/document'
 import { LibraryApi } from '@/api/kb/library'
 import { FolderApi } from '@/api/kb/folder'
 import { useKbUpload } from '../useKbUpload'
+import { checkPermi } from '@/utils/permission'
 
 /** 知识库文件 表单 */
 defineOptions({ name: 'DocumentForm' })
@@ -120,6 +127,13 @@ const dialogVisible = ref(false) // 弹窗的是否展示
 const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中：1）修改时的数据加载；2）提交的按钮禁用
 const formType = ref('') // 表单的类型：create - 新增；update - 修改
+
+/** 提交按钮是否可用：新增需 kb:document:create，修改需 kb:document:update */
+const canSubmit = computed(() => {
+  if (formType.value === 'create') return checkPermi(['kb:document:create'])
+  if (formType.value === 'update') return checkPermi(['kb:document:update'])
+  return false
+})
 const formData = ref({
   id: undefined,
   kbId: undefined,
@@ -223,6 +237,11 @@ defineExpose({ open }) // 提供 open 方法，用于打开弹窗
 /** 提交表单 */
 const emit = defineEmits(['success']) // 定义 success 事件，用于操作成功后的回调
 const submitForm = async () => {
+  // 权限前置校验，避免无权限用户绕过禁用按钮提交后出现"保存成功"误导
+  if (!canSubmit.value) {
+    message.error('您没有操作该知识库文档的权限')
+    return
+  }
   // 校验表单
   await formRef.value.validate()
   // 新增模式：手动校验文件是否已上传
@@ -251,6 +270,8 @@ const submitForm = async () => {
     dialogVisible.value = false
     // 发送操作成功的事件
     emit('success')
+  } catch {
+    // 后端拒绝（权限/校验/冲突）由全局拦截器提示，此处仅兜底不弹"保存成功"
   } finally {
     formLoading.value = false
   }

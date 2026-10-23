@@ -355,7 +355,14 @@
                 >
                   设为中心
                 </el-button>
-                <el-button type="primary" size="small" @click="openEdit(graphDrawerPage)">编辑</el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  v-has-permi="['kb:document:update']"
+                  @click="openEdit(graphDrawerPage)"
+                >
+                  编辑
+                </el-button>
               </div>
               <div v-if="graphDrawerNeighborHint" class="wiki-drawer-neighbor-hint">
                 {{ graphDrawerNeighborHint }}
@@ -734,6 +741,10 @@ const editVisible = ref(false)
 const editPage = ref<WikiPageVO | null>(null)
 
 const openEdit = (row: WikiPageVO | null) => {
+  if (!canEdit.value) {
+    message.error('您没有编辑 Wiki 页面的权限')
+    return
+  }
   editPage.value = row
   editVisible.value = true
 }

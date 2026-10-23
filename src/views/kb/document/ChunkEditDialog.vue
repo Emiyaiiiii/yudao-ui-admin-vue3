@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ChunkApi, type ChunkItem } from '@/api/kb/chunk'
+import { checkPermi } from '@/utils/permission'
 
 defineOptions({ name: 'ChunkEditDialog' })
 
@@ -35,6 +36,8 @@ const props = defineProps<{
   docId: number
   kbId: number
   chunk: ChunkItem | null
+  /** 当前用户是否有该知识库的编辑/管理权限（由父组件传入，基于 canManage 等细粒度校验） */
+  userCanEdit?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'update:visible', v: boolean): void
@@ -48,7 +51,14 @@ const dialogVisible = computed({
 })
 const content = ref('')
 const submitLoading = ref(false)
-const canEdit = computed(() => props.chunk != null && !props.chunk.isImage && props.chunk.chunkRole !== 'parent')
+/** 切片本身可编辑（非图片、非父块）且当前用户有知识库编辑权限 */
+const canEdit = computed(
+  () =>
+    props.chunk != null &&
+    !props.chunk.isImage &&
+    props.chunk.chunkRole !== 'parent' &&
+    (props.userCanEdit === true || checkPermi(['kb:document:update']))
+)
 
 watch(
   () => props.visible,
@@ -61,6 +71,10 @@ watch(
 
 const handleSubmit = async () => {
   if (!props.chunk) return
+  if (!canEdit.value) {
+    message.error('您没有编辑该知识库切片的权限')
+    return
+  }
   if (!content.value.trim()) {
     message.warning('内容不能为空')
     return
