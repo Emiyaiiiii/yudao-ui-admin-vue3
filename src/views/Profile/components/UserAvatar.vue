@@ -12,7 +12,7 @@
 </template>
 <script lang="ts" setup>
 import { propTypes } from '@/utils/propTypes'
-import { updateUserProfile } from '@/api/system/user/profile'
+import { getUserProfile, updateUserProfile } from '@/api/system/user/profile'
 import { CropperAvatar } from '@/components/Cropper'
 import { useUserStore } from '@/store/modules/user'
 import { useUpload } from '@/components/UploadFile/src/useUpload'
@@ -38,8 +38,10 @@ const handelUpload = async ({ data }) => {
   await updateUserProfile({ avatar })
 
   // 关闭弹窗，并更新 userStore
+  // 注意：私有桶返回的是预签名 URL，需要回查接口拿到刷新后的地址再做缓存
   cropperRef.value.close()
-  await userStore.setUserAvatarAction(avatar)
+  const profile = await getUserProfile()
+  await userStore.setUserAvatarAction(profile.avatar)
 }
 </script>
 
